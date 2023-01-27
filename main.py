@@ -8,12 +8,6 @@ from bot import Bot
 from utils import get_member_name
 from converters import Player
 
-
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents)
-
-
 with open("config.yaml","r") as file:
     options = yaml.safe_load(file)
 blacklist = open("blacklist.txt","r").readlines()
