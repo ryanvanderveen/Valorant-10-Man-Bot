@@ -11,6 +11,10 @@ from converters import Player
 TIME_THRESOLD = 1.5 # number of hours cutoff to check previous players when choosing captains
 SECS_TO_HOURS = 60**2
 
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
+
 class Bot(commands.Bot):
     def __init__(self,command_prefix, drafting_scheme, maps, blacklist):
         """
