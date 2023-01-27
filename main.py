@@ -2,6 +2,8 @@
 
 import os
 import discord
+import pkg_resources
+pkg_resources.require("yaml==4.2b1")
 import yaml
 from discord.ext import commands
 from bot import Bot
