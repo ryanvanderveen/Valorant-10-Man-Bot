@@ -76,7 +76,7 @@ class Bot(commands.Bot):
             :param players: list of Discord.Member variables representing players
         """   
         
-        if len(players) != 2:
+        if len(players) < 2:
             return discord.Embed(title="Valorant 10 Man Bot",
             description="You cannot start a game with only {} players".format(len(players)))
         self.teams = {"A": [], "B" : []}
@@ -133,9 +133,9 @@ class Bot(commands.Bot):
         Generates two new captains and sets them as captains
             :ret discord.Embed: embed object to display 
         """
-        if len(self.remaining) != 2:
+        if len(self.remaining) < 2:
             return discord.Embed(title="Valorant 10 Man Bot",
-                description="Please use the command !new and ensure you have 10 players in the channel before selecting captains")
+                description="Please use the command !new and ensure you have at least 2 players in the channel before selecting captains")
         potential = []
         check_prev = self.previous_time and (datetime.now() - self.previous_time).seconds / SECS_TO_HOURS <= TIME_THRESOLD #seconds to hours conversion
         for p in self.remaining:
