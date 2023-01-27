@@ -76,12 +76,12 @@ class Bot(commands.Bot):
         Clears instance variables in preperation for new game
             :param players: list of Discord.Member variables representing players
         """   
-        await ctx.send("How many players are playing?")
+        await self.send("How many players are playing?")
 
         # This will make sure that the response will only be registered if the following
         # conditions are met:
         def check(msg):
-            return msg.author == ctx.author and msg.channel == ctx.channel and \
+            return msg.author == self.author and msg.channel == self.channel and \
             msg.content.lower() in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
 
         msg = await client.wait_for("message", check=check)
