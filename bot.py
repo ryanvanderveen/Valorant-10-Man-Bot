@@ -75,6 +75,7 @@ class Bot(commands.Bot):
         Clears instance variables in preperation for new game
             :param players: list of Discord.Member variables representing players
         """   
+        
         if len(players) != len(lobby_channel.members):
             return discord.Embed(title="Valorant 10 Man Bot",
             description="You cannot start a game with only {} players".format(len(players)))
