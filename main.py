@@ -15,7 +15,8 @@ blacklist = open("blacklist.txt","r").readlines()
 bot = Bot("!", options["scheme"], options["maps"], blacklist)
 
 command = {'pls ', 'PLS ', 'PlS ', 'PLs ', 'pLs ', 'pLS ', 'plS ', 'Pls '}
-client = commands.Bot(command_prefix=command, case_insensitive=True)
+intents = discord.Intents.all()
+client = commands.Bot(command_prefix=command, case_insensitive=True, intents=intents)
 
 length = '============'
 
