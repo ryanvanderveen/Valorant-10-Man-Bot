@@ -83,18 +83,7 @@ async def draft_for_bot(ctx,bot_name : Player, player_name : Player):
 @bot.command()
 async def setcaps(ctx,cap1 : Player, cap2 : Player):
     lobby_channel = next((i for i in ctx.guild.voice_channels if i.name == options['lobby']), None)
-    await ctx.send("How many players are playing?")
-
-    # This will make sure that the response will only be registered if the following
-    # conditions are met:
-    def check(msg):
-        return msg.author == ctx.author and msg.channel == ctx.channel and int(msg.content) in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-
-    msg = await client.wait_for("message", check=check)
-    
-    if int(msg.content) != lobby_channel.members:
-        await ctx.send("Please get the right amount of people to join.")
-    players = int(msg.content)
+    players = lobby_channel.members
     await bot.new_game(players)
     await bot.set_captain(cap1,"A")
     await bot.set_captain(cap2,"B")
@@ -111,7 +100,7 @@ async def new(ctx):
     def check(msg):
         return msg.author == ctx.author and msg.channel == ctx.channel and int(msg.content) in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-    msg = await client.wait_for("message", check=check)
+    msg = await bot.wait_for("message", check=check)
     
     if int(msg.content) != lobby_channel.members:
         await ctx.send("Please get the right amount of people to join.")
