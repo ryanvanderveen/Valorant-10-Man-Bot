@@ -109,7 +109,7 @@ async def new(ctx):
         embed = discord.Embed(title="Valorant 10 Man Bot",
         description="Please get the right amount of people to join.")
         await ctx.send(embed=embed)
-    players = int(msg.content)
+    players = lobby_channel.members
     embed = await bot.new_game(players)
     await ctx.send(embed=embed)
 
