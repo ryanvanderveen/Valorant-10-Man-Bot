@@ -20,7 +20,7 @@ class Bot(commands.Bot):
             :param maps: list of strings where each string corresponds to a map name
         """   
         intents = discord.Intents.all()
-        commands.Bot.__init__(self,command_prefix=command_prefix,intents=intents)
+        commands.Bot.__init__(self,command_prefix=command_prefix,intents=intents,case_insensitive=True)
         self.teams = {"A" : [], "B" : []}
         self.remaining = []
         self.captains = {"A" : None, "B": None}
