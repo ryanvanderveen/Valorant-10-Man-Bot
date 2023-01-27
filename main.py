@@ -93,6 +93,7 @@ async def setcaps(ctx,cap1 : Player, cap2 : Player):
 
 @bot.command()
 async def new(ctx):
+    lobby_channel = next((i for i in ctx.guild.voice_channels if i.name == options['lobby']), None)
     embed = discord.Embed(title="Valorant 10 Man Bot",
             description="How many players are playing?")
     await ctx.send(embed=embed)
@@ -109,7 +110,6 @@ async def new(ctx):
         description="Please get the right amount of people to join.")
         await ctx.send(embed=embed)
     players = int(msg.content)
-    lobby_channel = next((i for i in ctx.guild.voice_channels if i.name == options['lobby']), None)
     embed = await bot.new_game(players)
     await ctx.send(embed=embed)
 
