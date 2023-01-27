@@ -76,7 +76,7 @@ class Bot(commands.Bot):
             :param players: list of Discord.Member variables representing players
         """   
         
-        if players != 2:
+        if len(players) != 2:
             return discord.Embed(title="Valorant 10 Man Bot",
             description="You cannot start a game with only {} players".format(len(players)))
         self.teams = {"A": [], "B" : []}
