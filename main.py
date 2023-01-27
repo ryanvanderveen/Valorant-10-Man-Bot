@@ -12,23 +12,20 @@ from converters import Player
 with open("config.yaml","r") as file:
     options = yaml.safe_load(file)
 blacklist = open("blacklist.txt","r").readlines()
-bot = Bot("!", options["scheme"], options["maps"], blacklist)
-
 command = {'pls ', 'PLS ', 'PlS ', 'PLs ', 'pLs ', 'pLS ', 'plS ', 'Pls '}
-intents = discord.Intents.all()
-client = commands.Bot(command_prefix=command, case_insensitive=True, intents=intents)
+bot = Bot(command, options["scheme"], options["maps"], blacklist)
 
 length = '============'
 
 def get_pp_size():
   return ''.join(random.choice(length) for i in range(random.randint(0, 20)))
   
-@client.event
+@bot.event
 async def on_ready():
   await client.change_presence(status=discord.Status.online, activity=discord.Game('with Dana\'s pussy'))
-  print('We have logged in as {0.user}'.format(client))
+  print('We have logged in as {0.user}'.format(bot))
   
-@client.command()
+@bot.command()
 async def pp(ctx, user: discord.Member = None):
   pp_size = get_pp_size()
   pp_num_size = len(pp_size)
@@ -37,7 +34,7 @@ async def pp(ctx, user: discord.Member = None):
   else:
     await ctx.send("{0}'s penis is 8{1}D, a total of {2} inches long".format(user.mention, pp_size, pp_num_size))
 
-@client.command()
+@bot.command()
 async def fuck(ctx, user: discord.Member = None, *, reason = '', type = 'anal'):
   pp_size = get_pp_size()
   pp_num_size = len(pp_size)
