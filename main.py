@@ -16,7 +16,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 
-options = yaml.load(open(Loader="config.yaml",'r'))
+options = yaml.load(open("config.yaml",'r'))
 blacklist = open("blacklist.txt","r").readlines()
 bot = Bot("!", options["scheme"], options["maps"], blacklist)
 
