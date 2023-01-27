@@ -92,7 +92,7 @@ async def setcaps(ctx,cap1 : Player, cap2 : Player):
     await ctx.send(embed=embed)
 
 @bot.command()
-async def new(ctx, numPlayers):
+async def new(ctx):
     lobby_channel = next((i for i in ctx.guild.voice_channels if i.name == options['lobby']), None)
     embed = await bot.new_game(lobby_channel.members)
     await ctx.send(embed=embed)
