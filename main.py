@@ -3,6 +3,7 @@
 import os
 import discord
 import yaml
+import random
 from discord.ext import commands
 from bot import Bot
 from utils import get_member_name
@@ -13,13 +14,35 @@ with open("config.yaml","r") as file:
 blacklist = open("blacklist.txt","r").readlines()
 bot = Bot("!", options["scheme"], options["maps"], blacklist)
 
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user}")
+command = {'pls ', 'PLS ', 'PlS ', 'PLs ', 'pLs ', 'pLS ', 'plS ', 'Pls '}
+client = commands.Bot(command_prefix=command, case_insensitive=True)
 
-@bot.event
+length = '============'
+
+def get_pp_size():
+  return ''.join(random.choice(length) for i in range(random.randint(0, 20)))
+  
+@client.event
 async def on_ready():
-    await bot.change_presence(activity=discord.Game(name="!help for help"))
+  await client.change_presence(status=discord.Status.online, activity=discord.Game('with Dana\'s pussy'))
+  print('We have logged in as {0.user}'.format(client))
+  
+@client.command()
+async def pp(ctx, user: discord.Member = None):
+  pp_size = get_pp_size()
+  pp_num_size = len(pp_size)
+  if (user == None):
+    await ctx.send("{0}'s penis is 8{1}D, a total of {2} inches long".format(ctx.author.mention, pp_size, pp_num_size))
+  else:
+    await ctx.send("{0}'s penis is 8{1}D, a total of {2} inches long".format(user.mention, pp_size, pp_num_size))
+
+@client.command()
+async def fuck(ctx, user: discord.Member = None, *, reason = '', type = 'anal'):
+  pp_size = get_pp_size()
+  pp_num_size = len(pp_size)
+  asshole = pp_num_size / 2.5
+  reason = 'dick, 8{0}D. Which is a total of a {1} inches long!'.format(pp_size, pp_num_size)
+  await ctx.send('{0} just had {2} sex with {3}\'s {1} {3} expanded {0}\'s asshole by {4} inches'.format(user.mention, reason, type, ctx.author.mention, asshole))
 
 @bot.command()
 async def newcaps(ctx):
