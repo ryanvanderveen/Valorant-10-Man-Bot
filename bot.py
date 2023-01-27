@@ -71,12 +71,22 @@ class Bot(commands.Bot):
         else:
             return discord.Embed(title="Valorant 10 Man Bot",description="Sorry, {} is already drafted".format(get_member_name(player)))
 
-    async def new_game(self, players, numPlayers):
+    async def new_game(self, players):
         """
         Clears instance variables in preperation for new game
             :param players: list of Discord.Member variables representing players
         """   
-        if len(players) != numPlayers:
+        await ctx.send("How many players are playing?")
+
+        # This will make sure that the response will only be registered if the following
+        # conditions are met:
+        def check(msg):
+            return msg.author == ctx.author and msg.channel == ctx.channel and \
+            msg.content.lower() in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
+        msg = await client.wait_for("message", check=check)
+            if len(players) != numPlayers:
+                
             return discord.Embed(title="Valorant 10 Man Bot",
             description="You cannot start a game with only {} players".format(len(players)))
         self.teams = {"A": [], "B" : []}
