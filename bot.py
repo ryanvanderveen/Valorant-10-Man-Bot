@@ -76,7 +76,7 @@ class Bot(commands.Bot):
         Clears instance variables in preperation for new game
             :param players: list of Discord.Member variables representing players
         """   
-        await return discord.Embed(title="Valorant 10 Man Bot",
+        return discord.Embed(title="Valorant 10 Man Bot",
         description="How many players are playing?"
 
         # This will make sure that the response will only be registered if the following
