@@ -10,6 +10,10 @@ scheme:
   - "B1"
   - "A1"
 maps:
+  - "Ascent"
   - "Bind"
-  - "Split"
+  - "Breeze"
+  - "Fracture"
   - "Haven"
+  - "Icebox"
+  - "Split"
