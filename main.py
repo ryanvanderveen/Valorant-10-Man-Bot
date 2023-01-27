@@ -105,7 +105,7 @@ async def new(ctx):
 
     msg = await bot.wait_for("message", check=check)
     
-    if int(msg.content) != lobby_channel.members:
+    if int(msg.content) != len(lobby_channel.members):
         embed = discord.Embed(title="Valorant 10 Man Bot",
         description="Please get the right amount of people to join.")
         await ctx.send(embed=embed)
