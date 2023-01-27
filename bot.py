@@ -15,7 +15,7 @@ class Bot(commands.Bot):
     def __init__(self,command_prefix, drafting_scheme, maps, blacklist):
         """
         Constructor for Bot
-            :param command_prefix: symbol to type before command. For ex, use "!" if you want to use "!<command>"
+            :param command_prefix: symbol to type before command. For ex, use "pls" if you want to use "!<command>"
             :param drafting_scheme: list contains strings of format "<A/B><1-2>" where first char is team and 2nd char is # players
             :param maps: list of strings where each string corresponds to a map name
         """   
