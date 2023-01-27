@@ -85,8 +85,8 @@ class Bot(commands.Bot):
             msg.content.lower() in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
 
         msg = await client.wait_for("message", check=check)
-            if len(players) != numPlayers:
-                
+        numPlayers = int("msg")
+        if len(players) != msg:
             return discord.Embed(title="Valorant 10 Man Bot",
             description="You cannot start a game with only {} players".format(len(players)))
         self.teams = {"A": [], "B" : []}
