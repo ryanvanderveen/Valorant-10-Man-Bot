@@ -100,11 +100,11 @@ async def new(ctx):
 @bot.command()
 async def help(ctx):
     embed = discord.Embed(title="Valorant 10 Man Bot",
-            description="The following commands are available\n\n :one: !nc : selects captains for current game\n\
-                         :two: !d <player name> : drafts player to your team (you must be captain)\n\
-                         :three: !setcaps <captain1> <captain2> : manually set the captains \n\
-                         :four: !new : starts a new game (does not set captains)\n\
-                         :five: !ban <map_name> : bans a map (must be captain)")
+            description="The following commands are available\n\n :one: pls nc : selects captains for current game\n\
+                         :two: pls d <player name> : drafts player to your team (you must be captain)\n\
+                         :three: pls setcaps <captain1> <captain2> : manually set the captains \n\
+                         :four: pls new : starts a new game (does not set captains)\n\
+                         :five: pls ban <map_name> : bans a map (must be captain)")
     await ctx.send(embed=embed)
     
 bot.run(os.environ["DISCORD_TOKEN"])
