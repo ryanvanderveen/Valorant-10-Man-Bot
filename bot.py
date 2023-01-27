@@ -19,7 +19,7 @@ class Bot(commands.Bot):
             :param drafting_scheme: list contains strings of format "<A/B><1-2>" where first char is team and 2nd char is # players
             :param maps: list of strings where each string corresponds to a map name
         """   
-        commands.Bot.__init__(self,command_prefix=command_prefix,intents = discord.Intents.all())
+        commands.Bot.__init__(self,command_prefix=command_prefix,intents = discord.Intents.default())
         self.teams = {"A" : [], "B" : []}
         self.remaining = []
         self.captains = {"A" : None, "B": None}
