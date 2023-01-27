@@ -11,7 +11,7 @@ from converters import Player
 with open("config.yaml","r") as file:
     options = yaml.safe_load(file)
 blacklist = open("blacklist.txt","r").readlines()
-bot = Bot(".", options["scheme"], options["maps"], blacklist)
+bot = Bot("!", options["scheme"], options["maps"], blacklist)
 
 @bot.event
 async def on_ready():
