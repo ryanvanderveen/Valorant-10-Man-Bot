@@ -93,7 +93,9 @@ async def setcaps(ctx,cap1 : Player, cap2 : Player):
 
 @bot.command()
 async def new(ctx):
-    await ctx.send("How many players are playing?")
+    embed = discord.Embed(title="Valorant 10 Man Bot",
+            description="How many players are playing?"
+    await ctx.send(embed=embed)
 
     # This will make sure that the response will only be registered if the following
     # conditions are met:
@@ -103,7 +105,9 @@ async def new(ctx):
     msg = await bot.wait_for("message", check=check)
     
     if int(msg.content) != lobby_channel.members:
-        await ctx.send("Please get the right amount of people to join.")
+        embed = discord.Embed(title="Valorant 10 Man Bot",
+        description="Please get the right amount of people to join."
+        await ctx.send(embed=embed)
     players = int(msg.content)
     lobby_channel = next((i for i in ctx.guild.voice_channels if i.name == options['lobby']), None)
     embed = await bot.new_game(players)
