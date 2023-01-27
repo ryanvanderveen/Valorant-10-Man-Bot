@@ -11,10 +11,6 @@ from converters import Player
 TIME_THRESOLD = 1.5 # number of hours cutoff to check previous players when choosing captains
 SECS_TO_HOURS = 60**2
 
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents)
-
 class Bot(commands.Bot):
     def __init__(self,command_prefix, drafting_scheme, maps, blacklist):
         """
@@ -23,7 +19,7 @@ class Bot(commands.Bot):
             :param drafting_scheme: list contains strings of format "<A/B><1-2>" where first char is team and 2nd char is # players
             :param maps: list of strings where each string corresponds to a map name
         """   
-        commands.Bot.__init__(self,command_prefix=command_prefix)
+        commands.Bot.__init__(self,command_prefix=command_prefix,intents = discord.Intents.all())
         self.teams = {"A" : [], "B" : []}
         self.remaining = []
         self.captains = {"A" : None, "B": None}
