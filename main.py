@@ -104,8 +104,20 @@ async def setcaps(ctx,cap1 : Player, cap2 : Player):
 
 @bot.command()
 async def new(ctx):
+    await ctx.send("How many players are playing?")
+
+    # This will make sure that the response will only be registered if the following
+    # conditions are met:
+    def check(msg):
+        return msg.author == ctx.author and msg.channel == ctx.channel and int(msg.content) in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+    msg = await client.wait_for("message", check=check)
+    
+    if int(msg.content) != lobby_channel.members:
+        await ctx.send("Please get the right amount of people to join.")
+    players = int(msg.content)
     lobby_channel = next((i for i in ctx.guild.voice_channels if i.name == options['lobby']), None)
-    embed = await bot.new_game(lobby_channel.members)
+    embed = await bot.new_game(players)
     await ctx.send(embed=embed)
 
 @bot.command()
