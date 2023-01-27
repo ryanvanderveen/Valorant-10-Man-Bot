@@ -11,6 +11,8 @@ from converters import Player
 TIME_THRESOLD = 1.5 # number of hours cutoff to check previous players when choosing captains
 SECS_TO_HOURS = 60**2
 
+numPlayers = 10
+
 class Bot(commands.Bot):
     def __init__(self,command_prefix, drafting_scheme, maps, blacklist):
         """
@@ -69,12 +71,12 @@ class Bot(commands.Bot):
         else:
             return discord.Embed(title="Valorant 10 Man Bot",description="Sorry, {} is already drafted".format(get_member_name(player)))
 
-    async def new_game(self, players):
+    async def new_game(self, players, numPlayers):
         """
         Clears instance variables in preperation for new game
             :param players: list of Discord.Member variables representing players
         """   
-        if len(players) != 10:
+        if len(players) != numPlayers:
             return discord.Embed(title="Valorant 10 Man Bot",
             description="You cannot start a game with only {} players".format(len(players)))
         self.teams = {"A": [], "B" : []}
@@ -126,12 +128,12 @@ class Bot(commands.Bot):
         elif not self.map_dict[map_to_ban.lower()]:
             return discord.Embed(title="Valorant 10 Man Bot", 
                                  description=f"{map_to_ban} is already banned. The remaining maps are:\n"+ await self.get_remaining_map_string()) 
-    async def generate_captains(self,team_a_channel, team_b_channel):
+    async def generate_captains(self,team_a_channel, team_b_channel, numPlayers):
         """
         Generates two new captains and sets them as captains
             :ret discord.Embed: embed object to display 
         """
-        if len(self.remaining) != 10:
+        if len(self.remaining) != numPlayers:
             return discord.Embed(title="Valorant 10 Man Bot",
                 description="Please use the command !new and ensure you have 10 players in the channel before selecting captains")
         potential = []
