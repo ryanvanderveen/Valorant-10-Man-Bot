@@ -75,7 +75,7 @@ class Bot(commands.Bot):
         Clears instance variables in preperation for new game
             :param players: list of Discord.Member variables representing players
         """   
-        if len(players) != lobby_channel.members:
+        if len(players) != len(lobby_channel.members):
             return discord.Embed(title="Valorant 10 Man Bot",
             description="You cannot start a game with only {} players".format(len(players)))
         self.teams = {"A": [], "B" : []}
@@ -132,7 +132,7 @@ class Bot(commands.Bot):
         Generates two new captains and sets them as captains
             :ret discord.Embed: embed object to display 
         """
-        if len(self.remaining) != lobby_channel.members:
+        if len(self.remaining) != len(lobby_channel.members):
             return discord.Embed(title="Valorant 10 Man Bot",
                 description="Please use the command !new and ensure you have 10 players in the channel before selecting captains")
         potential = []
