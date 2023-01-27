@@ -128,7 +128,7 @@ class Bot(commands.Bot):
         elif not self.map_dict[map_to_ban.lower()]:
             return discord.Embed(title="Valorant 10 Man Bot", 
                                  description=f"{map_to_ban} is already banned. The remaining maps are:\n"+ await self.get_remaining_map_string()) 
-    async def generate_captains(self,team_a_channel, team_b_channel, numPlayers):
+    async def generate_captains(self,team_a_channel, team_b_channel):
         """
         Generates two new captains and sets them as captains
             :ret discord.Embed: embed object to display 
