@@ -20,7 +20,7 @@ length = '============'
 def get_pp_size():
   return ''.join(random.choice(length) for i in range(random.randint(0, 20)))
 def get_rizz():
-  return ''.join(random.choice(length) for i in range(random.randint(0, 10)))
+  return ''.join(random.randint(0, 10))
   
 @bot.event
 async def on_ready():
