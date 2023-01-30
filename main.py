@@ -19,6 +19,8 @@ length = '============'
 
 def get_pp_size():
   return ''.join(random.choice(length) for i in range(random.randint(0, 20)))
+def get_rizz():
+  return ''.join(random.choice(length) for i in range(random.randint(0, 10)))
   
 @bot.event
 async def on_ready():
@@ -33,14 +35,14 @@ async def pp(ctx, user: discord.Member = None):
     await ctx.send("{0}'s penis is 8{1}D, a total of {2} inches long".format(ctx.author.mention, pp_size, pp_num_size))
   else:
     await ctx.send("{0}'s penis is 8{1}D, a total of {2} inches long".format(user.mention, pp_size, pp_num_size))
-
+    
 @bot.command()
-async def fuck(ctx, user: discord.Member = None, *, reason = '', type = 'anal'):
-  pp_size = get_pp_size()
-  pp_num_size = len(pp_size)
-  asshole = pp_num_size / 2.5
-  reason = 'dick, 8{0}D. Which is a total of a {1} inches long!'.format(pp_size, pp_num_size)
-  await ctx.send('{0} just had {2} sex with {3}\'s {1} {3} expanded {0}\'s asshole by {4} inches'.format(user.mention, reason, type, ctx.author.mention, asshole))
+async def rizz(ctx, user: discord.Member = None):
+  rizz = get_rizz()
+  if (user == None):
+    await ctx.send("{0} your rizz is {1}/10.".format(ctx.author.mention, rizz))
+  else:
+    await ctx.send("{0} your rizz is {1}/10.".format(ctx.author.mention, rizz))
 
 @bot.command()
 async def newcaps(ctx):
