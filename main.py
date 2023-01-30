@@ -40,7 +40,7 @@ async def rizz(ctx, user: discord.Member = None):
   if (user == None):
     await ctx.send("{0} your rizz is {1}/10.".format(ctx.author.mention, rizz))
   else:
-    await ctx.send("{0}'s rizz is {1}/10.".format(ctx.author.mention, rizz))
+    await ctx.send("{0}'s rizz is {1}/10.".format(user.mention, rizz))
 
 @bot.command()
 async def newcaps(ctx):
