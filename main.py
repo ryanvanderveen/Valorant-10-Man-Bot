@@ -19,8 +19,6 @@ length = '============'
 
 def get_pp_size():
   return ''.join(random.choice(length) for i in range(random.randint(0, 20)))
-def get_rizz():
-  return ''.join(random.randint(0, 10))
   
 @bot.event
 async def on_ready():
@@ -38,7 +36,7 @@ async def pp(ctx, user: discord.Member = None):
     
 @bot.command()
 async def rizz(ctx, user: discord.Member = None):
-  rizz = get_rizz()
+  rizz = random.randint(0, 10)
   if (user == None):
     await ctx.send("{0} your rizz is {1}/10.".format(ctx.author.mention, rizz))
   else:
