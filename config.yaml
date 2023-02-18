@@ -21,6 +21,8 @@ maps:
   - "Split"
 picks:
   - ""
+  - ""
+  - ""
 sides:
   - "Attack"
   - "Defend"
