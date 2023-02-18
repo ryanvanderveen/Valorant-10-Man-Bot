@@ -83,10 +83,12 @@ async def draft_for_bot(ctx,bot_name : Player, player_name : Player):
 @bot.command()
 async def setcaps(ctx,cap1 : Player, cap2 : Player):
     lobby_channel = next((i for i in ctx.guild.voice_channels if i.name == options['lobby']), None)
+    a_channel = next((i for i in ctx.guild.voice_channels if i.name == options['team_a']), None)
+    b_channel = next((i for i in ctx.guild.voice_channels if i.name == options['team_b']), None)
     players = lobby_channel.members
     await bot.new_game(players)
-    await bot.set_captain(cap1,"A")
-    await bot.set_captain(cap2,"B")
+    await bot.set_captain(cap1,"A",a_channel)
+    await bot.set_captain(cap2,"B",b_channel)
     embed = discord.Embed(title="Valorant 10 Man Bot",
             description="The captains are {} and {}".format(get_member_name(cap1,lower=False),get_member_name(cap2,lower=False)))
     await ctx.send(embed=embed)
