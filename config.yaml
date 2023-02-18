@@ -11,8 +11,11 @@ scheme:
   - "A1"
 maps:
   - "Ascent"
+  - "Bind"
+  - "Breeze"
   - "Fracture"
   - "Haven"
   - "Icebox"
+  - "Lotus"
   - "Pearl"
   - "Split"
