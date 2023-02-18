@@ -20,7 +20,7 @@ maps:
   - "Pearl"
   - "Split"
 picks:
-
+  - ""
 sides:
   - "Attack"
   - "Defend"
