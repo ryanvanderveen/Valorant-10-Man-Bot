@@ -47,7 +47,7 @@ class Bot(commands.Bot):
         self.captains[team.upper()] = cap
         await self.add_to_team(cap,team)
         self.order.append(cap)
-        "await self.move_player(cap,team_channel)
+        """await self.move_player(cap,team_channel)"""
     async def get_team_embed(self):
         """
         Generates an embed for the chosen teams
