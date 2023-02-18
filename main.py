@@ -59,6 +59,16 @@ async def b(ctx, map_name : str):
 async def ban(ctx, map_name : str):
     embed = await bot.ban_map(map_name, ctx.author)
     await ctx.send(embed=embed)
+    
+@bot.command()
+async def pick(ctx, map_name : str):
+    embed = await bot.pick_map(map_name, ctx.author)
+    await ctx.send(embed=embed)
+    
+@bot.command()
+async def side(ctx, side_name : str):
+    embed = await bot.pick_side(side_name, ctx.author)
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def nc(ctx):
