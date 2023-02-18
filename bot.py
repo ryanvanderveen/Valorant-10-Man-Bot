@@ -13,7 +13,7 @@ SECS_TO_HOURS = 60**2
 
 
 class Bot(commands.Bot):
-    def __init__(self,command_prefix, drafting_scheme, maps, blacklist):
+    def __init__(self,command_prefix, drafting_scheme, maps, sides, blacklist):
         """
         Constructor for Bot
             :param command_prefix: symbol to type before command. For ex, use "pls" if you want to use "pls <command>"
@@ -35,6 +35,7 @@ class Bot(commands.Bot):
                               "B" : [int(s[1]) for s in drafting_scheme if s[0] == "B"]}
         self.turn = -1
         self.map_dict = {k.lower() : True for k in maps}
+        self.side_dict = {k.lower() : True for k in sides}
         self.remove_command("help") # we make a custom help command
     async def set_captain(self, cap : Player, team, team_channel):
         """
@@ -101,6 +102,23 @@ class Bot(commands.Bot):
                     embed_string += "{}. {}\n".format(num_available,pretty)
                     num_available += 1
         return embed_string
+    
+    async def pick_side(self, side_to_pick : str, caller : Player):
+        """
+        Pick side on map
+            :param side_to_pick: str that represents side to pick
+            :param caller: discord.Member object that represents who called the command
+        """   
+        if caller not in self.captains.values():
+            return discord.Embed(title="Valorant 10 Man Bot", description="Only captains can pick sides")
+        
+        if side_to_pick.lower() in self.side_dict.keys() and self.side_dict[side_to_pick.lower()] == True:
+            self.side_dict[side_to_pick.lower()] = False
+            embed_string = f"{side_to_pick} has been picked\n\n The remaining maps are\n\n" + await self.get_remaining_map_string()
+            return discord.Embed(title="Valorant 10 Man Bot", description=embed_string)
+            
+        elif side_to_pick.lower() not in self.side_dict.keys():
+            return discord.Embed(title="Valorant 10 Man Bot", description=f"{side_to_pick} is not a valid side")
     
     async def pick_map(self, map_to_pick : str, caller : Player):
         """
