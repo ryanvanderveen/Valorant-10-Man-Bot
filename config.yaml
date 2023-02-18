@@ -20,9 +20,15 @@ maps:
   - "Pearl"
   - "Split"
 picks:
-  - ""
-  - ""
-  - ""
+  - "Ascent"
+  - "Bind"
+  - "Breeze"
+  - "Fracture"
+  - "Haven"
+  - "Icebox"
+  - "Lotus"
+  - "Pearl"
+  - "Split"
 sides:
   - "Attack"
   - "Defend"
