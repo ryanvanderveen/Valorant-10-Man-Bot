@@ -174,7 +174,7 @@ class Bot(commands.Bot):
             counter = Counter(self.map_dict.values())
             embed_string = ""
 
-            if len(self.map_dict.keys() == 0): # no maps remaining
+            if len(self.map_dict.keys()) == 0: # no maps remaining
                 embed_string = "The matches will be played on\n" + await self.get_picked_map_string()
             else:
                 embed_string = f"{map_to_ban} has been banned\n\n The remaining maps are\n\n" + await self.get_remaining_map_string()
