@@ -113,7 +113,6 @@ class Bot(commands.Bot):
             return discord.Embed(title="Valorant 10 Man Bot", description="Only captains can pick sides")
         
         if side_to_pick.lower() in self.side_dict.keys() and self.side_dict[side_to_pick.lower()] == True:
-            self.side_dict[side_to_pick.lower()] = False
             embed_string = f"{side_to_pick} has been picked\n\n The remaining maps are\n\n" + await self.get_remaining_map_string()
             return discord.Embed(title="Valorant 10 Man Bot", description=embed_string)
             
