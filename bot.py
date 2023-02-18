@@ -13,7 +13,7 @@ SECS_TO_HOURS = 60**2
 
 
 class Bot(commands.Bot):
-    def __init__(self,command_prefix, drafting_scheme, maps, sides, blacklist):
+    def __init__(self,command_prefix, drafting_scheme, maps, picks, sides, blacklist):
         """
         Constructor for Bot
             :param command_prefix: symbol to type before command. For ex, use "pls" if you want to use "pls <command>"
@@ -35,6 +35,7 @@ class Bot(commands.Bot):
                               "B" : [int(s[1]) for s in drafting_scheme if s[0] == "B"]}
         self.turn = -1
         self.map_dict = {k.lower() : True for k in maps}
+        self.pick_dict = {k.lower() : True for k in picks}
         self.side_dict = {k.lower() : True for k in sides}
         self.remove_command("help") # we make a custom help command
     async def set_captain(self, cap : Player, team, team_channel):
@@ -131,6 +132,7 @@ class Bot(commands.Bot):
         
         if map_to_pick.lower() in self.map_dict.keys() and self.map_dict[map_to_pick.lower()] == True:
             self.map_dict[map_to_pick.lower()] = False
+            self.pick_dict[map_to_pick.lower()] = True
             embed_string = f"{map_to_pick} has been picked\n\n The remaining maps are\n\n" + await self.get_remaining_map_string()
             return discord.Embed(title="Valorant 10 Man Bot", description=embed_string)
 
