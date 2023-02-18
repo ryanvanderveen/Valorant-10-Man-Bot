@@ -36,7 +36,7 @@ class Bot(commands.Bot):
         self.turn = -1
         self.map_dict = {k.lower() : True for k in maps}
         self.remove_command("help") # we make a custom help command
-    async def set_captain(self, cap : Player, team):
+    async def set_captain(self, cap : Player, team, team_channel):
         """
         Sets captain for specified team
             :param cap: discord.Member object representing user that is now captain
@@ -45,6 +45,7 @@ class Bot(commands.Bot):
         self.captains[team.upper()] = cap
         await self.add_to_team(cap,team)
         self.order.append(cap)
+        await self.move_player(cap,team_channel)
     async def get_team_embed(self):
         """
         Generates an embed for the chosen teams
