@@ -177,8 +177,10 @@ class Bot(commands.Bot):
 
         for i,team in enumerate(self.captains.keys()):
             await self.set_captain(caps[i],team)
-            channel = channel_dict[team]
-            await self.move_player(caps[i],channel)
+            if i == 0:
+                await self.move_player(caps[0],team_a_channel)
+            if i == 1:
+                await self.move_player(caps[1],team_b_channel)
 
         return discord.Embed(title="Valorant 10 Man Bot",
             description="The captains are @{} (1st pick) and @{} (2nd pick)".format(get_member_name(caps[0],lower=False),get_member_name(caps[1],lower=False)))
