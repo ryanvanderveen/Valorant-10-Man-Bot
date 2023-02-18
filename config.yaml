@@ -20,5 +20,5 @@ maps:
   - "Pearl"
   - "Split"
 sides:
-  - "Attacking"
-  - "Defending"
+  - "Attackers"
+  - "Defenders"
