@@ -52,8 +52,8 @@ class Bot(commands.Bot):
         embed = discord.Embed(title="Valorant 10 Man Bot",colour=discord.Colour(0x470386))
         team_a_strings = [get_member_name(m,lower=False) for m in self.teams["A"]]
         team_b_strings = [get_member_name(m,lower=False) for m in self.teams["B"]]   
-        embed.add_field(name="Defenders", value="{}".format("\n".join(team_a_strings)), inline=True)
-        embed.add_field(name="Attackers", value="{}".format("\n".join(team_b_strings)), inline=True)
+        embed.add_field(name="A", value="{}".format("\n".join(team_a_strings)), inline=True)
+        embed.add_field(name="B", value="{}".format("\n".join(team_b_strings)), inline=True)
         return embed
     async def add_to_team(self, player : Player, team):
         """
@@ -100,6 +100,34 @@ class Bot(commands.Bot):
                     embed_string += "{}. {}\n".format(num_available,pretty)
                     num_available += 1
         return embed_string
+    
+    async def pick_map(self, map_to_pick : str, caller : Player):
+        """
+        Pick map from pool
+            :param map_to_pick: str that represents map to pick
+            :param caller: discord.Member object that represents who called the command
+        """   
+        if caller not in self.captains.values():
+            return discord.Embed(title="Valorant 10 Man Bot", description="Only captains can pick maps")
+        map_to_pick = map_to_pick[0].upper() + map_to_pick[1:].lower()
+        
+        if map_to_pick.lower() in self.map_dict.keys() and self.map_dict[map_to_pick.lower()] == True:
+            self.map_dict[map_to_pick.lower()] = False
+            counter = Counter(self.map_dict.values())
+            embed_string = ""
+
+            """if counter[False] == len(self.map_dict.keys()) - 1: # one map remaining
+                embed_string = "The match will be played on {}".format(next((prettify(k) for k in self.map_dict.keys() if self.map_dict[k]), None))
+            else:
+                embed_string = f"{map_to_ban} has been banned\n\n The remaining maps are\n\n" + await self.get_remaining_map_string()
+            return discord.Embed(title="Valorant 10 Man Bot", description=embed_string)"""
+
+        elif map_to_pick.lower() not in self.map_dict.keys():
+            return discord.Embed(title="Valorant 10 Man Bot", description=f"{map_to_pick} is not a valid map")
+
+        elif not self.map_dict[map_to_pick.lower()]:
+            return discord.Embed(title="Valorant 10 Man Bot", 
+                                 description=f"{map_to_pick} is already picked or banned. The remaining maps are:\n"+ await self.get_remaining_map_string()) 
 
     async def ban_map(self, map_to_ban : str, caller : Player):
         """
@@ -149,6 +177,8 @@ class Bot(commands.Bot):
 
         for i,team in enumerate(self.captains.keys()):
             await self.set_captain(caps[i],team)
+            channel = channel_dict[team]
+            await self.move_player(caps[i],channel)
 
         return discord.Embed(title="Valorant 10 Man Bot",
             description="The captains are @{} (1st pick) and @{} (2nd pick)".format(get_member_name(caps[0],lower=False),get_member_name(caps[1],lower=False)))
