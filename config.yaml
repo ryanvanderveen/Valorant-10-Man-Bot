@@ -19,3 +19,6 @@ maps:
   - "Lotus"
   - "Pearl"
   - "Split"
+sides:
+  - "Attacking"
+  - "Defending"
