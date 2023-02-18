@@ -132,8 +132,8 @@ class Bot(commands.Bot):
         
         if map_to_pick.lower() in self.map_dict.keys() and self.map_dict[map_to_pick.lower()] == True:
             self.map_dict[map_to_pick.lower()] = False
-            counter = Counter(self.map_dict.values())
-            embed_string = ""
+            embed_string = f"{map_to_pick} has been picked\n\n The remaining maps are\n\n" + await self.get_remaining_map_string()
+            return discord.Embed(title="Valorant 10 Man Bot", description=embed_string)
 
             """if counter[False] == len(self.map_dict.keys()) - 1: # one map remaining
                 embed_string = "The match will be played on {}".format(next((prettify(k) for k in self.map_dict.keys() if self.map_dict[k]), None))
