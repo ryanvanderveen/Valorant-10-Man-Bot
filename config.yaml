@@ -9,6 +9,15 @@ scheme:
   - "A1"
   - "B1"
   - "A1"
+scheme:
+  - "A1"
+  - "B1"
+  - "A1"
+  - "B1"
+  - "A1"
+  - "B1"
+  - "A1"
+  - "B1"
 maps:
   - "Ascent"
   - "Bind"
