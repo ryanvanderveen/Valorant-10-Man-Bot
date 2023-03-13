@@ -1,5 +1,5 @@
 ---
-title: Discord Python bot
+title: Discord Python bot by Ryan
 description: A Discord bot written in Python
 tags:
   - python
