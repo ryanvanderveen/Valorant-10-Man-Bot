@@ -1,4 +1,4 @@
 ---
-title: Discord Python bot by Ryan
+title: Discord Python Bot by Ryan
 description: A Discord bot for choosing teams, maps, and sides in Valorant
 ---
