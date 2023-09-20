@@ -12,7 +12,7 @@ from converters import Player
 with open("config.yaml","r") as file:
     options = yaml.safe_load(file)
 blacklist = open("blacklist.txt","r").readlines()
-command = {'pls ', 'PLS ', 'PlS ', 'PLs ', 'pLs ', 'pLS ', 'plS ', 'Pls '}
+command = {'pls ', 'PLS ', 'PlS ', 'PLs ', 'pLs ', 'pLS ', 'plS ', 'Pls ', 'please '}
 bot = Bot(command, options["scheme"], options["maps"], options["picks"], options["sides"], blacklist)
 
 length = '============'
