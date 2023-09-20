@@ -40,7 +40,7 @@ async def rizz(ctx, user: discord.Member = None):
   if (user == None):
     await ctx.send("{0} your rizz is {1}/10.".format(ctx.author.mention, rizz))
   else:
-    if ({1} > 5):
+    if (rizz > 5):
         await ctx.send("{0} successfully rizzed {2}. They're rizz was {1}/10.".format(user.author.mention, rizz, user.mention))
     else:
         await ctx.send("{0} failed to rizz {2}. They're rizz was {1}/10.".format(user.author.mention, rizz, user.mention))
