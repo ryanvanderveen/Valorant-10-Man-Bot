@@ -30,9 +30,9 @@ async def pp(ctx, user: discord.Member = None):
   pp_size = get_pp_size()
   pp_num_size = len(pp_size)
   if (user == None):
-    await ctx.send("{0}'s penis is 8{1}D, a total of {2} inches long".format(ctx.author.mention, pp_size, pp_num_size))
+    await ctx.send("{0}'s pp is 8{1}D, a total of {2} inches long".format(ctx.author.mention, pp_size, pp_num_size))
   else:
-    await ctx.send("{0}'s penis is 8{1}D, a total of {2} inches long".format(user.mention, pp_size, pp_num_size))
+    await ctx.send("{0}'s pp is 8{1}D, a total of {2} inches long".format(user.mention, pp_size, pp_num_size))
     
 @bot.command()
 async def rizz(ctx, user: discord.Member = None):
