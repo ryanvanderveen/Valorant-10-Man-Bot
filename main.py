@@ -46,7 +46,7 @@ async def rizz(ctx, user: discord.Member = None):
         await ctx.send("{0} failed to rizz {2}. Their rizz was {1}/10.".format(ctx.author.mention, rizz, user.mention))
 
 @bot.command()
-async def rizz(ctx, user: discord.Member = None):
+async def fuck(ctx, user: discord.Member = None):
   fuck = random.randint(0, 60)
   time = random.randint(0, 2)
   if (user == None):
