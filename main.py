@@ -44,6 +44,18 @@ async def rizz(ctx, user: discord.Member = None):
         await ctx.send("{0} successfully rizzed {2}. Their rizz was {1}/10.".format(ctx.author.mention, rizz, user.mention))
     else:
         await ctx.send("{0} failed to rizz {2}. Their rizz was {1}/10.".format(ctx.author.mention, rizz, user.mention))
+
+@bot.command()
+async def rizz(ctx, user: discord.Member = None):
+  fuck = random.randint(0, 60)
+  time = random.randint(0, 2)
+  if (user == None):
+    await ctx.send("You can't fuck yourself retard.")
+  else:
+    if (time = 1):
+        await ctx.send("{0} lasted {1} seconds with {2}.".format(ctx.author.mention, fuck, user.mention))
+    else:
+        await ctx.send("{0} lasted {1} minutes with {2}.".format(ctx.author.mention, fuck, user.mention))
                        
 @bot.command()
 async def newcaps(ctx):
