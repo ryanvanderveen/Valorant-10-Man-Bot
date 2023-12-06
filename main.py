@@ -52,7 +52,7 @@ async def fuck(ctx, user: discord.Member = None):
   if (user == None):
     await ctx.send("You can't fuck yourself retard.")
   else:
-    if (time = 1):
+    if (time == 1):
         await ctx.send("{0} lasted {1} seconds with {2}.".format(ctx.author.mention, fuck, user.mention))
     else:
         await ctx.send("{0} lasted {1} minutes with {2}.".format(ctx.author.mention, fuck, user.mention))
