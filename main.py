@@ -15,7 +15,7 @@ blacklist = open("blacklist.txt","r").readlines()
 command = {'pls ', 'PLS ', 'PlS ', 'PLs ', 'pLs ', 'pLS ', 'plS ', 'Pls '}
 bot = Bot(command, options["scheme"], options["maps"], options["picks"], options["sides"], blacklist)
 
-length = '============'
+length = '============='
 
 def get_pp_size():
   return ''.join(random.choice(length) for i in range(random.randint(0, 20)))
