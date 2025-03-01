@@ -14,59 +14,66 @@ class Fun(commands.Cog):
         size = "=" * random.randint(0, 20)
         await ctx.send(f"{user.mention}'s pp is 8{size}D, length: {len(size)} inches.")
 
-    @commands.command()
+        @commands.command()
     async def rizz(self, ctx, user: discord.Member = None):
-        """Rates user's rizz"""
-        user = user or ctx.author
-        score = random.randint(0, 10)
-        await ctx.send(f"{user.mention} has {score}/10 rizz! 💯")
+        """Attempts to rizz someone up"""
+        rizz = random.randint(0, 10)
+        if user is None:
+            await ctx.send(f"{ctx.author.mention}, your rizz is **{rizz}/10**.")
+        else:
+            if rizz > 5:
+                await ctx.send(f"{ctx.author.mention} successfully rizzed {user.mention}. Their rizz was **{rizz}/10**! 🕺🔥")
+            else:
+                await ctx.send(f"{ctx.author.mention} failed to rizz {user.mention}. Their rizz was only **{rizz}/10**. 💀")
 
     @commands.command()
-    async def roast(self, ctx, user: discord.Member = None):
-        """Roasts a user"""
-        roasts = [
-            "You're slower than my grandma’s WiFi.",
-            "You're proof that even mistakes can be successful.",
-            "Your brain has more lag than a 2004 Dell laptop."
+    async def smash(self, ctx, user: discord.Member = None):
+        """Rates if you'd smash or pass"""
+        user = user or ctx.author
+        smash_chance = random.randint(0, 100)
+        if smash_chance > 50:
+            await ctx.send(f"{user.mention}, I'd **definitely smash**! 😏🔥 (**{smash_chance}% smash chance**)")
+        else:
+            await ctx.send(f"{user.mention}, it's a **pass** for me. ❌ (**{smash_chance}% smash chance**)")
+
+    @commands.command()
+    async def suck(self, ctx, user: discord.Member = None):
+        """Simulates sucking something 😏"""
+        user = user or ctx.author
+        await ctx.send(f"{user.mention} is sucking on something real good... 🍭😏")
+
+    @commands.command()
+    async def moan(self, ctx):
+        """Sends a random moan"""
+        moans = [
+            "*Ahnn~* 😫",
+            "*Ohhh daddyyy~* 😩",
+            "*Uhhh~* 😍",
+            "*Ahhh~* 🔥",
+            "*Mmmm~* 😏"
         ]
-        user = user or ctx.author
-        await ctx.send(f"{user.mention}, {random.choice(roasts)}")
+        await ctx.send(random.choice(moans))
 
     @commands.command()
-    async def bless(self, ctx, user: discord.Member = None):
-        """Compliments a user"""
-        compliments = [
-            "You're amazing just the way you are! ✨",
-            "Your presence lights up the server! 🔥",
-            "You're proof that kindness still exists. ❤️"
+    async def sex(self, ctx, user: discord.Member = None):
+        """Generates a random 'how long you last' result"""
+        if user is None:
+            await ctx.send("You need a partner first 😏")
+            return
+        duration = random.randint(1, 60)
+        unit = "seconds" if duration < 10 else "minutes"
+        await ctx.send(f"{ctx.author.mention} lasted **{duration} {unit}** with {user.mention}. 🍑🔥")
+
+    @commands.command()
+    async def daddy(self, ctx, user: discord.Member = None):
+        """Calls someone daddy"""
+        user = user or ctx.author
+        responses = [
+            f"{user.mention} is the ultimate daddy. 😩",
+            f"{user.mention} is **not** daddy material. 🚫",
+            f"{user.mention}, do you like being called daddy? 👀"
         ]
-        user = user or ctx.author
-        await ctx.send(f"{user.mention}, {random.choice(compliments)}")
-
-    @commands.command()
-    async def love(self, ctx, user: discord.Member = None):
-        """Love compatibility"""
-        if not user:
-            await ctx.send("You need someone to love! 💔")
-            return
-        score = random.randint(0, 100)
-        await ctx.send(f"💖 {ctx.author.mention} and {user.mention} have {score}% compatibility!")
-
-    @commands.command()
-    async def fight(self, ctx, user: discord.Member = None):
-        """Fights another user"""
-        if not user:
-            await ctx.send("You need an opponent to fight! 🥊")
-            return
-        winner = random.choice([ctx.author, user])
-        await ctx.send(f"🥊 {ctx.author.mention} and {user.mention} fought... and **{winner.mention}** won!")
-
-    @commands.command()
-    async def simp(self, ctx, user: discord.Member = None):
-        """Rates how much of a simp someone is"""
-        user = user or ctx.author
-        simp_score = random.randint(0, 100)
-        await ctx.send(f"💗 {user.mention} is **{simp_score}%** a simp!")
+        await ctx.send(random.choice(responses))
 
     @commands.command()
     async def eightball(self, ctx, *, question: str):
@@ -76,21 +83,6 @@ class Fun(commands.Cog):
             "I'm not sure... 🤷", "Absolutely! 🎯", "I wouldn't count on it. 🙅‍♂️"
         ]
         await ctx.send(f"🎱 **Question:** {question}\n**Answer:** {random.choice(responses)}")
-
-    @commands.command()
-    async def meme(self, ctx):
-        """Fetches a random meme from an API"""
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://meme-api.com/gimme") as response:
-                if response.status == 200:
-                    data = await response.json()
-                    meme_url = data["url"]
-                    title = data["title"]
-                    embed = discord.Embed(title=title, color=discord.Color.random())
-                    embed.set_image(url=meme_url)
-                    await ctx.send(embed=embed)
-                else:
-                    await ctx.send("Couldn't fetch a meme. Try again later!")
 
 # ✅ Fix: Correctly define setup function for bot
 async def setup(bot):
