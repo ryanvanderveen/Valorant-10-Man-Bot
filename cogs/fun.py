@@ -14,7 +14,7 @@ class Fun(commands.Cog):
         size = "=" * random.randint(0, 20)
         await ctx.send(f"{user.mention}'s pp is 8{size}D, length: {len(size)} inches.")
 
-        @commands.command()
+    @commands.command()
     async def rizz(self, ctx, user: discord.Member = None):
         """Attempts to rizz someone up"""
         rizz = random.randint(0, 10)
