@@ -10,7 +10,7 @@ from converters import Player
 
 command = {'pls ', 'PLS ', 'PlS ', 'PLs ', 'pLs ', 'pLS ', 'plS ', 'Pls '}
 intents = discord.Intents.default()
-bot = commands.Bot(command_prefix=config[command], intents=intents)
+bot = commands.Bot(command_prefix=[command], intents=intents)
 
 # Load all cogs (command files)
 COGS = ["fun", "utility"]  # Add more as needed
