@@ -9,18 +9,18 @@ from utils import get_member_name
 from converters import Player
 
 # Load config
-with open("config.yaml", "r") as file:
-    config = yaml.safe_load(file)
+config_path = "config.yaml"
+if os.path.exists(config_path):
+    with open(config_path, "r") as file:
+        config = yaml.safe_load(file)
+else:
+    print("⚠️ config.yaml not found! Using default settings.")
+    config = {"prefix": "pls "}  # Default settings
 
 # Initialize bot
 intents = discord.Intents.default()
-intents.messages = True  # Ensure bot can read messages
-# Ensure command prefix is correctly formatted
-prefix = config["prefix"]
-if isinstance(prefix, set):  # ✅ Fix: Convert set to tuple
-    prefix = tuple(prefix)
-
-bot = commands.Bot(command_prefix=prefix, intents=intents)
+intents.messages = True
+bot = commands.Bot(command_prefix=config["prefix"], intents=intents)
 
 async def load_cogs():
     """Loads all cogs asynchronously."""
