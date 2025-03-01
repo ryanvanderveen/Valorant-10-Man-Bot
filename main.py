@@ -1,12 +1,13 @@
-﻿import discord
+﻿# This example requires the 'message_content' privileged intents
+
 import os
+import discord
 import yaml
+import random
 import asyncio
 from discord.ext import commands
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+from utils import get_member_name
+from converters import Player
 
 # Load config.yaml
 config_path = "config.yaml"
