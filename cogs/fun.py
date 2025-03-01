@@ -81,4 +81,3 @@ async def setup(bot):
     print("✅ Loading fun cog...")  # ✅ Debugging
     await bot.add_cog(Fun(bot))
     print("✅ Fun cog successfully loaded!")  # ✅ Debugging
-

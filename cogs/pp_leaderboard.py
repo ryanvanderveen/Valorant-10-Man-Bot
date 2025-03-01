@@ -29,14 +29,14 @@ class PPLeaderboard(commands.Cog):
             json.dump(self.leaderboard, f, indent=4)
 
     @commands.command()
-    @commands.cooldown(1, COOLDOWN_TIME, commands.BucketType.user)  # ✅ Built-in cooldown: 1 use per hour per user
+    @commands.cooldown(1, COOLDOWN_TIME, commands.BucketType.user)  # ✅ Built-in cooldown
     async def pp(self, ctx, user: discord.Member = None):
         """Random PP size with cooldown"""
         user = user or ctx.author
         user_id = str(user.id)
 
-        # Generate new PP size
-        size = "=" * random.randint(0, 20)
+        # Generate new PP size (fix: use an integer instead of a string)
+        size = random.randint(0, 20)  # ✅ Now it's an integer
         current_size = self.leaderboard.get(user_id, 0)
 
         if size > current_size:
