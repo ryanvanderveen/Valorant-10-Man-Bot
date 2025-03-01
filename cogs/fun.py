@@ -40,5 +40,5 @@ class Fun(commands.Cog):
         score = random.randint(0, 100)
         await ctx.send(f"💖 {ctx.author.mention} and {user.mention} have {score}% compatibility!")
 
-def setup(bot):
-    bot.add_cog(Fun(bot))
+async def setup(bot):
+    await bot.add_cog(Fun(bot))

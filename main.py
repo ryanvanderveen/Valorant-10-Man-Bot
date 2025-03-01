@@ -4,6 +4,7 @@ import os
 import discord
 import yaml
 import random
+import asyncio
 from discord.ext import commands
 from utils import get_member_name
 from converters import Player
@@ -19,7 +20,7 @@ else:
 
 # Initialize bot
 intents = discord.Intents.default()
-intents.messages = True
+intents.message_content = True  # ✅ Fix: Enable privileged intent
 bot = commands.Bot(command_prefix=config["prefix"], intents=intents)
 
 async def load_cogs():
@@ -32,10 +33,12 @@ async def load_cogs():
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
 
-# Run the bot
+# ✅ Fix: Use proper async bot startup
 async def main():
-    await load_cogs()  # ✅ Fix: Now awaited
-    await bot.start(os.environ["DISCORD_TOKEN"])
+    async with bot:
+        await load_cogs()  # ✅ Fix: Now properly awaited
+        await bot.start(os.getenv("DISCORD_TOKEN"))
 
-import asyncio
-asyncio.run(main())  # ✅ Fix: Use asyncio to run async function
+# ✅ Fix: Use asyncio.run() correctly
+if __name__ == "__main__":
+    asyncio.run(main())
