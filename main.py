@@ -21,7 +21,11 @@ else:
 # Initialize bot
 intents = discord.Intents.default()
 intents.message_content = True  # ✅ Fix: Enable privileged intent
-bot = commands.Bot(command_prefix=config["prefix"], intents=intents)
+bot = commands.Bot(
+    command_prefix=config["prefix"],
+    intents=intents,
+    help_command=None  # Disable default help command
+)
 
 async def load_cogs():
     """Loads all cogs asynchronously."""
