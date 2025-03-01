@@ -1,50 +1,48 @@
 ﻿import discord
 import random
-import json
-import os
+import aiosqlite  # ✅ Async SQLite
 from discord.ext import commands, tasks
 from datetime import datetime
 
-# File to store PP sizes
-DATA_FILE = "pp_leaderboard.json"
+DATABASE_FILE = "pp_leaderboard.db"  # SQLite database file
 COOLDOWN_TIME = 3600  # 1 hour in seconds
 
 class PPLeaderboard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.load_data()
+        self.bot.loop.create_task(self.initialize_db())  # ✅ Initialize database on startup
         self.reset_leaderboard.start()  # Start the weekly reset task
 
-    def load_data(self):
-        """Loads the leaderboard data from a file."""
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, "r") as f:
-                self.leaderboard = json.load(f)
-        else:
-            self.leaderboard = {}
-
-    def save_data(self):
-        """Saves the leaderboard data to a file."""
-        with open(DATA_FILE, "w") as f:
-            json.dump(self.leaderboard, f, indent=4)
+    async def initialize_db(self):
+        """Creates the database and table if they don't exist."""
+        async with aiosqlite.connect(DATABASE_FILE) as db:
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS pp_sizes (
+                    user_id INTEGER PRIMARY KEY, 
+                    size INTEGER
+                )"""
+            )
+            await db.commit()
 
     @commands.command()
-    @commands.cooldown(1, COOLDOWN_TIME, commands.BucketType.user)  # ✅ Built-in cooldown
+    @commands.cooldown(1, COOLDOWN_TIME, commands.BucketType.user)  # ✅ 1 use per hour per user
     async def pp(self, ctx, user: discord.Member = None):
-        """Random PP size with cooldown"""
+        """Random PP size with cooldown (now stored in SQL)"""
         user = user or ctx.author
-        user_id = str(user.id)
+        user_id = user.id
+        size = random.randint(0, 20)  # ✅ Generate new PP size
 
-        # Generate new PP size (fix: use an integer instead of a string)
-        size = random.randint(0, 20)  # ✅ Now it's an integer
-        current_size = self.leaderboard.get(user_id, 0)
+        async with aiosqlite.connect(DATABASE_FILE) as db:
+            async with db.execute("SELECT size FROM pp_sizes WHERE user_id = ?", (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                current_size = row[0] if row else 0  # Get current size, default to 0
 
-        if size > current_size:
-            self.leaderboard[user_id] = size
-            self.save_data()
-            await ctx.send(f"{user.mention} got a **record-breaking** pp size: 8{'=' * size}D! (**{size} inches**) 🎉")
-        else:
-            await ctx.send(f"{user.mention}'s pp is 8{'=' * size}D (**{size} inches**), but it's not a new record. 😢")
+            if size > current_size:
+                await db.execute("INSERT INTO pp_sizes (user_id, size) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET size = ?", (user_id, size, size))
+                await db.commit()
+                await ctx.send(f"{user.mention} got a **record-breaking** pp size: 8{'=' * size}D! (**{size} inches**) 🎉")
+            else:
+                await ctx.send(f"{user.mention}'s pp is 8{'=' * size}D (**{size} inches**), but it's not a new record. 😢")
 
     @pp.error
     async def pp_error(self, ctx, error):
@@ -57,23 +55,18 @@ class PPLeaderboard(commands.Cog):
 
     @commands.command()
     async def leaderboard(self, ctx):
-        """Displays the top 5 users with the biggest pp sizes"""
-        if not self.leaderboard:
+        """Displays the top 5 users with the biggest pp sizes (from SQL)"""
+        async with aiosqlite.connect(DATABASE_FILE) as db:
+            async with db.execute("SELECT user_id, size FROM pp_sizes ORDER BY size DESC LIMIT 5") as cursor:
+                top_users = await cursor.fetchall()
+
+        if not top_users:
             await ctx.send("No pp sizes recorded yet! Use `pls pp` to start.")
             return
 
-        sorted_leaderboard = sorted(self.leaderboard.items(), key=lambda x: x[1], reverse=True)
-        top_users = sorted_leaderboard[:5]
-
         embed = discord.Embed(title="🍆 PP Leaderboard - Biggest of the Week", color=discord.Color.purple())
         for rank, (user_id, size) in enumerate(top_users, start=1):
-            user = self.bot.get_user(int(user_id))  # Get from cache
-            if user is None:
-                try:
-                    user = await self.bot.fetch_user(int(user_id))  # Fetch user if not cached
-                except discord.NotFound:
-                    user = None  # Handle missing user
-
+            user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)  # ✅ Fetch username if needed
             username = user.name if user else f"Unknown User ({user_id})"
             embed.add_field(name=f"#{rank}: {username}", value=f"Size: 8{'=' * size}D (**{size} inches**)", inline=False)
 
@@ -84,8 +77,9 @@ class PPLeaderboard(commands.Cog):
         """Resets the leaderboard every Sunday at midnight"""
         now = datetime.utcnow()
         if now.weekday() == 6 and now.hour == 0:  # Sunday midnight UTC
-            self.leaderboard.clear()
-            self.save_data()
+            async with aiosqlite.connect(DATABASE_FILE) as db:
+                await db.execute("DELETE FROM pp_sizes")  # ✅ Clears the table
+                await db.commit()
             print("🔄 PP Leaderboard has been reset for the new week!")
 
     @reset_leaderboard.before_loop

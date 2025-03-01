@@ -1,6 +1,5 @@
 ﻿import discord
 import random
-import aiohttp  # For fetching memes
 from discord.ext import commands
 
 class Fun(commands.Cog):
