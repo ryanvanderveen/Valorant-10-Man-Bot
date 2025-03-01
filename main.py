@@ -25,15 +25,20 @@ bot = commands.Bot(command_prefix=config["prefix"], intents=intents)
 
 async def load_cogs():
     """Loads all cogs asynchronously."""
-    COGS = ["fun", "utility"]  # Add more cogs if needed
+    COGS = ["fun", "utility"]  # Add all cogs here
     for cog in COGS:
-        await bot.load_extension(f"cogs.{cog}")
+        try:
+            await bot.load_extension(f"cogs.{cog}")
+            print(f"✅ Loaded {cog} cog")
+        except Exception as e:
+            print(f"❌ Failed to load {cog}: {e}")
+
 
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
 
-# ✅ Fix: Use proper async bot startup
+# ✅ Fix: Properly await cog loading
 async def main():
     async with bot:
         await load_cogs()  # ✅ Fix: Now properly awaited

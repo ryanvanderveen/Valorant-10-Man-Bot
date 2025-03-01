@@ -1,4 +1,4 @@
-import discord
+﻿import discord
 from discord.ext import commands
 
 class Utility(commands.Cog):
@@ -20,5 +20,6 @@ class Utility(commands.Cog):
         embed.set_footer(text=f"Requested by {ctx.author.name}")
         await ctx.send(embed=embed)
 
-def setup(bot):
-    bot.add_cog(Utility(bot))
+# ✅ Fix: Correctly define setup function for bot
+async def setup(bot):
+    await bot.add_cog(Utility(bot))
