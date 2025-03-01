@@ -2,20 +2,18 @@
 import random
 import json
 import os
-import time
 from discord.ext import commands, tasks
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # File to store PP sizes
 DATA_FILE = "pp_leaderboard.json"
-COOLDOWN_TIME = 3600  # Cooldown in seconds (1 hour)
+COOLDOWN_TIME = 3600  # 1 hour in seconds
 
 class PPLeaderboard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.load_data()
         self.reset_leaderboard.start()  # Start the weekly reset task
-        self.cooldowns = {}  # Stores user cooldown timestamps
 
     def load_data(self):
         """Loads the leaderboard data from a file."""
@@ -31,21 +29,11 @@ class PPLeaderboard(commands.Cog):
             json.dump(self.leaderboard, f, indent=4)
 
     @commands.command()
+    @commands.cooldown(1, COOLDOWN_TIME, commands.BucketType.user)  # ✅ Built-in cooldown: 1 use per hour per user
     async def pp(self, ctx, user: discord.Member = None):
         """Random PP size with cooldown"""
         user = user or ctx.author
         user_id = str(user.id)
-        
-        # Cooldown check
-        current_time = time.time()
-        if user_id in self.cooldowns:
-            last_used = self.cooldowns[user_id]
-            time_remaining = COOLDOWN_TIME - (current_time - last_used)
-            if time_remaining > 0:
-                minutes = int(time_remaining // 60)
-                seconds = int(time_remaining % 60)
-                await ctx.send(f"⏳ {user.mention}, you need to wait **{minutes}m {seconds}s** before checking your PP size again! 🍆")
-                return
 
         # Generate new PP size
         size = random.randint(1, 20)
@@ -58,8 +46,14 @@ class PPLeaderboard(commands.Cog):
         else:
             await ctx.send(f"{user.mention}'s pp is 8{'=' * size}D (**{size} inches**), but it's not a new record. 😢")
 
-        # Set cooldown
-        self.cooldowns[user_id] = current_time
+    @pp.error
+    async def pp_error(self, ctx, error):
+        """Handles cooldown errors for pp command"""
+        if isinstance(error, commands.CommandOnCooldown):
+            time_remaining = int(error.retry_after)
+            minutes = time_remaining // 60
+            seconds = time_remaining % 60
+            await ctx.send(f"⏳ {ctx.author.mention}, you need to wait **{minutes}m {seconds}s** before checking your PP size again! 🍆")
 
     @commands.command()
     async def leaderboard(self, ctx):
