@@ -5,7 +5,6 @@ import discord
 import yaml
 import random
 from discord.ext import commands
-from bot import Bot
 from utils import get_member_name
 from converters import Player
 
