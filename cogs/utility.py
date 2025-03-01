@@ -5,8 +5,8 @@ class Utility(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command()
-    async def help(self, ctx):
+    @commands.command(name="bothelp")
+    async def bothelp(self, ctx):
         """Displays help information"""
         embed = discord.Embed(title="Bot Commands", description="Here's what I can do:", color=discord.Color.blue())
         embed.add_field(name="Fun Commands", value="`pls pp`, `pls rizz`, `pls roast`, `pls love`", inline=False)
