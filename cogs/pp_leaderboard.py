@@ -30,7 +30,6 @@ class PPLeaderboard(commands.Cog):
 
     @commands.command()
     @commands.cooldown(1, COOLDOWN_TIME, commands.BucketType.user)  # ✅ Built-in cooldown: 1 use per hour per user
-    @commands.command()
     async def pp(self, ctx, user: discord.Member = None):
         """Random PP size with cooldown"""
         user = user or ctx.author

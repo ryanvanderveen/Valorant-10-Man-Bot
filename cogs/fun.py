@@ -48,7 +48,7 @@ class Fun(commands.Cog):
         await ctx.send(random.choice(moans))
 
     @commands.command()
-    async def sex(self, ctx, user: discord.Member = None):
+    async def fuck(self, ctx, user: discord.Member = None):
         """Generates a random 'how long you last' result"""
         if user is None:
             await ctx.send("You need a partner first 😏")
