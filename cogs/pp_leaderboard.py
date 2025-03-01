@@ -67,8 +67,14 @@ class PPLeaderboard(commands.Cog):
 
         embed = discord.Embed(title="🍆 PP Leaderboard - Biggest of the Week", color=discord.Color.purple())
         for rank, (user_id, size) in enumerate(top_users, start=1):
-            user = self.bot.get_user(int(user_id))
-            username = user.name if user else f"User {user_id}"
+            user = self.bot.get_user(int(user_id))  # Get from cache
+            if user is None:
+                try:
+                    user = await self.bot.fetch_user(int(user_id))  # Fetch user if not cached
+                except discord.NotFound:
+                    user = None  # Handle missing user
+
+            username = user.name if user else f"Unknown User ({user_id})"
             embed.add_field(name=f"#{rank}: {username}", value=f"Size: 8{'=' * size}D (**{size} inches**)", inline=False)
 
         await ctx.send(embed=embed)
