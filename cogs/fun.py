@@ -77,6 +77,8 @@ class Fun(commands.Cog):
         ]
         await ctx.send(f"🎱 **Question:** {question}\n**Answer:** {random.choice(responses)}")
 
-# ✅ Fix: Correctly define setup function for bot
 async def setup(bot):
+    print("✅ Loading fun cog...")  # ✅ Debugging
     await bot.add_cog(Fun(bot))
+    print("✅ Fun cog successfully loaded!")  # ✅ Debugging
+
