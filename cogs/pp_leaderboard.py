@@ -1,140 +1,77 @@
-﻿import discord
-import random
+﻿import os
 import asyncpg
-import asyncio
-import pytz  # ✅ Timezone handling
-import os
-from discord.ext import commands, tasks
-from datetime import datetime, timedelta
+import discord
+from discord.ext import commands
+from datetime import datetime
+import random
 
-DATABASE_URL = "DATABASE_URL"  # Replace with your actual PostgreSQL URL
-COOLDOWN_TIME = 3600  # 1 hour cooldown
-ET_TIMEZONE = pytz.timezone("America/New_York")  # ✅ Eastern Time Zone
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 class PPLeaderboard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.bot.loop.create_task(self.initialize_db())  # ✅ Initialize database on startup
-        self.reset_leaderboard.start()  # ✅ Start the weekly reset task
+        self.db = None  # ✅ Initialize the database pool
+        self.bot.loop.create_task(self.initialize_db())  # ✅ Start database setup on startup
 
     async def initialize_db(self):
-        """Creates the database and table if they don't exist."""
-        # Ensure the DSN format is correct for asyncpg
-        DATABASE_URL = os.getenv("DATABASE_URL")
+        """Creates a database connection pool and ensures the table exists."""
         if DATABASE_URL.startswith("postgresql://"):
             DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgres://", 1)  # ✅ Fix asyncpg issue
 
         try:
-            self.db = await asyncpg.connect(DATABASE_URL)
+            self.db = await asyncpg.create_pool(DATABASE_URL)  # ✅ Use connection pool
             print("✅ Successfully connected to PostgreSQL!")
+
+            async with self.db.acquire() as conn:
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS pp_sizes (
+                        user_id BIGINT PRIMARY KEY,
+                        size INTEGER,
+                        last_used TIMESTAMP DEFAULT NULL
+                    )
+                """)
+            print("✅ PostgreSQL database initialized!")
+
         except Exception as e:
             print(f"❌ ERROR: Unable to connect to PostgreSQL: {e}")
             exit(1)
 
-        await self.db.execute("""
-            CREATE TABLE IF NOT EXISTS pp_sizes (
-                user_id BIGINT PRIMARY KEY,
-                size INTEGER,
-                last_used TIMESTAMP DEFAULT NULL
-            )
-        """)
-
-        print("✅ PostgreSQL database initialized!")
-
     @commands.command()
     async def pp(self, ctx, user: discord.Member = None):
         """Generate a random PP size with a 1-hour cooldown"""
-        print(f"🔍 {ctx.author} triggered 'pls pp'")  # ✅ Debugging
+        print(f"🔍 {ctx.author} triggered 'pls pp'")
 
         user = user or ctx.author
         user_id = user.id
-        size = random.randint(0, 20)  # ✅ Generate new PP size
+        size = random.randint(0, 20)
+        now = datetime.utcnow()
 
-        async with self.db.acquire() as conn:
-            row = await conn.fetchrow("SELECT size, last_used FROM pp_sizes WHERE user_id = $1", user_id)
+        try:
+            async with self.db.acquire() as conn:  # ✅ Now using the pool
+                row = await conn.fetchrow("SELECT size, last_used FROM pp_sizes WHERE user_id = $1", user_id)
 
-            if row:
-                print(f"✅ Found existing PP data for {user.name}")  # ✅ Debugging
-                last_used = row["last_used"]
-                if last_used:
-                    elapsed_time = (datetime.utcnow() - last_used).total_seconds()
+                if row:
+                    last_used = row["last_used"]
+                    elapsed_time = (now - last_used).total_seconds() if last_used else 3601
                     if elapsed_time < 3600:
-                        await ctx.send(f"⏳ {user.mention}, you need to wait before checking again! 🍆")
+                        remaining_time = 3600 - elapsed_time
+                        minutes, seconds = divmod(int(remaining_time), 60)
+                        print(f"🕒 Cooldown Active: {minutes}m {seconds}s remaining")
+                        await ctx.send(f"⏳ {user.mention}, you need to wait **{minutes}m {seconds}s** before checking your PP size again! 🍆")
                         return
 
-            # Insert new size
-            await conn.execute(
-                "INSERT INTO pp_sizes (user_id, size, last_used) VALUES ($1, $2, NOW()) "
-                "ON CONFLICT(user_id) DO UPDATE SET size = EXCLUDED.size, last_used = NOW()",
-                user_id, size
-            )
-            print(f"✅ Updated PP size for {user.name}")  # ✅ Debugging
-            await ctx.send(f"{user.mention}'s new pp size: 8{'=' * size}D! (**{size} inches**) 🎉")
-    
-    @commands.command()
-    async def dbtest(self, ctx):
-        """Test if database connection works"""
-        try:
-            async with self.db.acquire() as conn:
-                result = await conn.fetch("SELECT COUNT(*) FROM pp_sizes")
-                await ctx.send(f"✅ Database connected! Total records: {result[0]['count']}")
+                await conn.execute(
+                    "INSERT INTO pp_sizes (user_id, size, last_used) VALUES ($1, $2, NOW()) "
+                    "ON CONFLICT(user_id) DO UPDATE SET size = EXCLUDED.size, last_used = NOW()",
+                    user_id, size
+                )
+
+                print(f"✅ Updated PP size for {user.name}: {size} inches")
+                await ctx.send(f"{user.mention}'s new pp size: 8{'=' * size}D! (**{size} inches**) 🎉")
+
         except Exception as e:
+            print(f"❌ Database error: {e}")
             await ctx.send(f"❌ Database error: {e}")
 
-    @commands.command()
-    async def leaderboard(self, ctx):
-        """Displays the top 5 users with the biggest pp sizes"""
-        async with self.db.acquire() as conn:
-            top_users = await conn.fetch("SELECT user_id, size FROM pp_sizes ORDER BY size DESC LIMIT 5")
-
-        if not top_users:
-            await ctx.send("No pp sizes recorded yet! Use `pls pp` to start.")
-            return
-
-        embed = discord.Embed(title="🍆 PP Leaderboard - Biggest of the Week", color=discord.Color.purple())
-        for rank, record in enumerate(top_users, start=1):
-            user_id, size = record["user_id"], record["size"]
-            user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)  # ✅ Fetch username if needed
-            username = user.name if user else f"Unknown User ({user_id})"
-            embed.add_field(name=f"#{rank}: {username}", value=f"Size: 8{'=' * size}D (**{size} inches**)", inline=False)
-
-        await ctx.send(embed=embed)
-
-    @tasks.loop(hours=24)
-    async def reset_leaderboard(self):
-        """Resets the leaderboard every Sunday at midnight ET"""
-        now_utc = datetime.utcnow()
-        now_et = now_utc.replace(tzinfo=pytz.utc).astimezone(ET_TIMEZONE)  # Convert UTC to Eastern Time
-
-        print(f"🔍 Checking reset time... Current ET: {now_et.strftime('%Y-%m-%d %H:%M:%S')}")
-
-        if now_et.weekday() == 6 and now_et.hour == 0:  # ✅ Sunday at midnight ET
-            async with self.db.acquire() as conn:
-                await conn.execute("DELETE FROM pp_sizes")  # ✅ Clears the table
-            print("🔄 PP Leaderboard has been reset for the new week!")
-
-    @reset_leaderboard.before_loop
-    async def before_reset_leaderboard(self):
-        """Wait until next Sunday midnight ET before starting the reset task"""
-        await self.bot.wait_until_ready()
-
-        now_utc = datetime.utcnow()
-        now_et = now_utc.replace(tzinfo=pytz.utc).astimezone(ET_TIMEZONE)  # Convert UTC to Eastern Time
-
-        # Calculate time until next Sunday at midnight ET
-        days_until_sunday = (6 - now_et.weekday()) % 7
-        next_sunday = now_et + timedelta(days=days_until_sunday)
-        next_sunday_midnight = next_sunday.replace(hour=0, minute=0, second=0, microsecond=0)
-
-        delay = (next_sunday_midnight - now_et).total_seconds()
-        print(f"⏳ Next leaderboard reset scheduled in {delay / 3600:.2f} hours (ET).")
-
-        await asyncio.sleep(delay)  # ✅ Wait until next Sunday midnight ET
-
-    async def cog_unload(self):
-        """Closes the database connection when the cog is unloaded"""
-        await self.db.close()
-
-# ✅ Setup function to load cog
 async def setup(bot):
     await bot.add_cog(PPLeaderboard(bot))
