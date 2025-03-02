@@ -102,7 +102,7 @@ class PPLeaderboard(commands.Cog):
 
     @tasks.loop(hours=24)
     async def reset_leaderboard(self):
-        """Resets the leaderboard every Sunday at midnight ET and assigns the 'Big PP Winner' role."""
+        """Resets the leaderboard every Sunday at midnight ET"""
         now_utc = datetime.utcnow()
         now_et = now_utc.replace(tzinfo=pytz.utc).astimezone(self.ET_TIMEZONE)  # Convert UTC to ET
 
@@ -130,9 +130,8 @@ class PPLeaderboard(commands.Cog):
                                 await winner_member.add_roles(role)
                                 print(f"🏆 {winner_member.name} has won the 'HOG DADDY' role!")
 
-                # Reset the leaderboard
                 await conn.execute("DELETE FROM pp_sizes")  # ✅ Clears the table
-                print("🔄 PP Leaderboard has been reset for the new week!")
+            print("🔄 PP Leaderboard has been reset for the new week!")
 
     @reset_leaderboard.before_loop
     async def before_reset_leaderboard(self):
@@ -140,20 +139,23 @@ class PPLeaderboard(commands.Cog):
         await self.bot.wait_until_ready()
 
         now_utc = datetime.utcnow()
-        now_et = now_utc.replace(tzinfo=pytz.utc).astimezone(self.ET_TIMEZONE)
+        now_et = now_utc.replace(tzinfo=pytz.utc).astimezone(self.ET_TIMEZONE)  # Convert UTC to ET
 
-        days_until_sunday = (6 - now_et.weekday()) % 7
-        next_sunday = now_et + timedelta(days=days_until_sunday)
-        next_sunday_midnight = next_sunday.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Check if today is Sunday and past midnight ET
+        if now_et.weekday() == 6 and now_et.hour >= 0:
+            # If it's already Sunday after midnight, schedule for next week
+            next_reset = now_et + timedelta(days=7)
+        else:
+            # Schedule for this upcoming Sunday
+            next_reset = now_et + timedelta(days=(6 - now_et.weekday()))
 
-        delay = (next_sunday_midnight - now_et).total_seconds()
+        next_reset = next_reset.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        delay = (next_reset - now_et).total_seconds()
         print(f"⏳ Next leaderboard reset scheduled in {delay / 3600:.2f} hours (ET).")
 
         await asyncio.sleep(delay)  # ✅ Wait until next Sunday midnight ET
 
-    async def cog_unload(self):
-        """Closes the database connection when the cog is unloaded"""
-        await self.db.close()
 
 async def setup(bot):
     await bot.add_cog(PPLeaderboard(bot))
