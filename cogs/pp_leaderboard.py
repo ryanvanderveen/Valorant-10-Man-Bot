@@ -44,42 +44,42 @@ class PPLeaderboard(commands.Cog):
     @commands.command()
     async def pp(self, ctx, user: discord.Member = None):
         """Generate a random PP size with a 1-hour cooldown"""
+        print(f"🔍 {ctx.author} triggered 'pls pp'")  # ✅ Debugging
+
         user = user or ctx.author
         user_id = user.id
         size = random.randint(0, 20)  # ✅ Generate new PP size
-        now = datetime.utcnow()
 
         async with self.db.acquire() as conn:
             row = await conn.fetchrow("SELECT size, last_used FROM pp_sizes WHERE user_id = $1", user_id)
 
             if row:
+                print(f"✅ Found existing PP data for {user.name}")  # ✅ Debugging
                 last_used = row["last_used"]
                 if last_used:
-                    elapsed_time = (now - last_used).total_seconds()
-                    if elapsed_time < COOLDOWN_TIME:
-                        remaining_time = COOLDOWN_TIME - elapsed_time
-                        minutes, seconds = divmod(int(remaining_time), 60)
-                        await ctx.send(f"⏳ {user.mention}, you need to wait **{minutes}m {seconds}s** before checking your PP size again! 🍆")
+                    elapsed_time = (datetime.utcnow() - last_used).total_seconds()
+                    if elapsed_time < 3600:
+                        await ctx.send(f"⏳ {user.mention}, you need to wait before checking again! 🍆")
                         return
 
-                current_size = row["size"]
-            else:
-                current_size = 0
-
-            # If new size is larger, update the database
-            if size > current_size:
-                await conn.execute(
-                    "INSERT INTO pp_sizes (user_id, size, last_used) VALUES ($1, $2, $3) "
-                    "ON CONFLICT(user_id) DO UPDATE SET size = EXCLUDED.size, last_used = EXCLUDED.last_used",
-                    user_id, size, now
-                )
-                await ctx.send(f"{user.mention} got a **record-breaking** pp size: 8{'=' * size}D! (**{size} inches**) 🎉")
-            else:
-                await conn.execute(
-                    "UPDATE pp_sizes SET last_used = $1 WHERE user_id = $2",
-                    now, user_id
-                )
-                await ctx.send(f"{user.mention}'s pp is 8{'=' * size}D (**{size} inches**), but it's not a new record. 😢")
+            # Insert new size
+            await conn.execute(
+                "INSERT INTO pp_sizes (user_id, size, last_used) VALUES ($1, $2, NOW()) "
+                "ON CONFLICT(user_id) DO UPDATE SET size = EXCLUDED.size, last_used = NOW()",
+                user_id, size
+            )
+            print(f"✅ Updated PP size for {user.name}")  # ✅ Debugging
+            await ctx.send(f"{user.mention}'s new pp size: 8{'=' * size}D! (**{size} inches**) 🎉")
+    
+    @commands.command()
+    async def dbtest(self, ctx):
+        """Test if database connection works"""
+        try:
+            async with self.db.acquire() as conn:
+                result = await conn.fetch("SELECT COUNT(*) FROM pp_sizes")
+                await ctx.send(f"✅ Database connected! Total records: {result[0]['count']}")
+        except Exception as e:
+            await ctx.send(f"❌ Database error: {e}")
 
     @commands.command()
     async def leaderboard(self, ctx):

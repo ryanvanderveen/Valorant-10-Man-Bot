@@ -28,7 +28,9 @@ else:
 
 # Initialize bot
 intents = discord.Intents.default()
-intents.message_content = True  # ✅ Ensures bot can read messages
+intents.messages = True  # ✅ Enable message intent
+intents.guilds = True
+intents.message_content = True  # ✅ Required for commands
 def custom_prefix(bot, message):
     return commands.when_mentioned_or("pls ", "Pls ", "PLS ", "pLS ", "pLs ", "plS ")(bot, message)
 
