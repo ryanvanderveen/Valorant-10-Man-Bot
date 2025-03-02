@@ -37,13 +37,30 @@ class PPLeaderboard(commands.Cog):
         user_id = user.id
         size = random.randint(0, 20)  # ✅ Generate new PP size
 
-        current_size = await self.db.fetchval("SELECT size FROM pp_sizes WHERE user_id = $1", user_id) or 0
+        async with self.db.acquire() as conn:
+            current_size = await conn.fetchval("SELECT size FROM pp_sizes WHERE user_id = $1", user_id) or 0
 
-        if size > current_size:
-            await self.db.execute("INSERT INTO pp_sizes (user_id, size) VALUES ($1, $2) ON CONFLICT(user_id) DO UPDATE SET size = EXCLUDED.size", user_id, size)
-            await ctx.send(f"{user.mention} got a **record-breaking** pp size: 8{'=' * size}D! (**{size} inches**) 🎉")
-        else:
-            await ctx.send(f"{user.mention}'s pp is 8{'=' * size}D (**{size} inches**), but it's not a new record. 😢")
+            if size > current_size:
+                await conn.execute(
+                    "INSERT INTO pp_sizes (user_id, size) VALUES ($1, $2) "
+                    "ON CONFLICT(user_id) DO UPDATE SET size = EXCLUDED.size",
+                    user_id, size
+                )
+                await ctx.send(f"{user.mention} got a **record-breaking** pp size: 8{'=' * size}D! (**{size} inches**) 🎉")
+            else:
+                await ctx.send(f"{user.mention}'s pp is 8{'=' * size}D (**{size} inches**), but it's not a new record. 😢")
+
+        print(f"✅ {user.name} ({user_id}) used pls pp - Size: {size} - Cooldown applied!")  # Debugging
+
+    @pp.error
+    async def pp_error(self, ctx, error):
+        """Handles cooldown errors for pp command"""
+        if isinstance(error, commands.CommandOnCooldown):
+            time_remaining = int(error.retry_after)
+            minutes = time_remaining // 60
+            seconds = time_remaining % 60
+            await ctx.send(f"⏳ {ctx.author.mention}, you need to wait **{minutes}m {seconds}s** before checking your PP size again! 🍆")
+
 
     @commands.command()
     async def leaderboard(self, ctx):
