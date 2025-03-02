@@ -77,28 +77,33 @@ class PPLeaderboard(commands.Cog):
                 print(f"✅ Updated PP size for {user.name}: {size} inches")
                 await ctx.send(f"{user.mention}'s new pp size: 8{'=' * size}D! (**{size} inches**) 🎉")
 
+                # Check if they have the biggest PP right now
+                await self.update_current_biggest(ctx.guild, user_id)
+
         except Exception as e:
             print(f"❌ Database error: {e}")
             await ctx.send(f"❌ Database error: {e}")
 
-    @commands.command()
-    async def leaderboard(self, ctx):
-        """Displays the top 5 users with the biggest PP sizes"""
+    async def update_current_biggest(self, guild, new_winner_id):
+        """Assigns the 'Current HOG DADDY' role to the biggest PP holder"""
         async with self.db.acquire() as conn:
-            top_users = await conn.fetch("SELECT user_id, size FROM pp_sizes ORDER BY size DESC LIMIT 5")
+            biggest = await conn.fetchrow("SELECT user_id FROM pp_sizes ORDER BY size DESC LIMIT 1")
 
-        if not top_users:
-            await ctx.send("No pp sizes recorded yet! Use `pls pp` to start.")
-            return
+            if biggest:
+                biggest_user_id = biggest["user_id"]
+                role = discord.utils.get(guild.roles, name="Current HOG DADDY")  # 🔹 Ensure this role exists
 
-        embed = discord.Embed(title="🍆 PP Leaderboard - Biggest of the Week", color=discord.Color.purple())
-        for rank, record in enumerate(top_users, start=1):
-            user_id, size = record["user_id"], record["size"]
-            user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)  # ✅ Fetch username if needed
-            username = user.name if user else f"Unknown User ({user_id})"
-            embed.add_field(name=f"#{rank}: {username}", value=f"Size: 8{'=' * size}D (**{size} inches**)", inline=False)
+                if role:
+                    biggest_member = guild.get_member(biggest_user_id)
+                    if biggest_member:
+                        # Remove role from all members first
+                        for member in guild.members:
+                            if role in member.roles:
+                                await member.remove_roles(role)
 
-        await ctx.send(embed=embed)
+                        # Assign the role to the new biggest PP holder
+                        await biggest_member.add_roles(role)
+                        print(f"🏆 {biggest_member.name} now holds 'Current HOG DADDY'!")
 
     @tasks.loop(hours=24)
     async def reset_leaderboard(self):
@@ -117,7 +122,7 @@ class PPLeaderboard(commands.Cog):
                     winner_id = winner["user_id"]
                     guild = self.bot.get_guild(934160898828931143)  # 🔹 Replace with your server ID
                     if guild:
-                        role = discord.utils.get(guild.roles, name="HOG DADDY")  # 🔹 Ensure this role exists in your server
+                        role = discord.utils.get(guild.roles, name="HOG DADDY")  # 🔹 Ensure this role exists
                         if role:
                             winner_member = guild.get_member(winner_id)
                             if winner_member:
@@ -126,7 +131,7 @@ class PPLeaderboard(commands.Cog):
                                     if role in member.roles:
                                         await member.remove_roles(role)
                                 
-                                # Assign role to the new winner
+                                # Assign role to the weekly winner
                                 await winner_member.add_roles(role)
                                 print(f"🏆 {winner_member.name} has won the 'HOG DADDY' role!")
 
@@ -141,21 +146,14 @@ class PPLeaderboard(commands.Cog):
         now_utc = datetime.utcnow()
         now_et = now_utc.replace(tzinfo=pytz.utc).astimezone(self.ET_TIMEZONE)  # Convert UTC to ET
 
-        # Check if today is Sunday and past midnight ET
-        if now_et.weekday() == 6 and now_et.hour >= 0:
-            # If it's already Sunday after midnight, schedule for next week
-            next_reset = now_et + timedelta(days=7)
-        else:
-            # Schedule for this upcoming Sunday
-            next_reset = now_et + timedelta(days=(6 - now_et.weekday()))
+        days_until_sunday = (6 - now_et.weekday()) % 7
+        next_sunday = now_et + timedelta(days=days_until_sunday)
+        next_sunday_midnight = next_sunday.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        next_reset = next_reset.replace(hour=0, minute=0, second=0, microsecond=0)
-
-        delay = (next_reset - now_et).total_seconds()
+        delay = (next_sunday_midnight - now_et).total_seconds()
         print(f"⏳ Next leaderboard reset scheduled in {delay / 3600:.2f} hours (ET).")
 
         await asyncio.sleep(delay)  # ✅ Wait until next Sunday midnight ET
-
 
 async def setup(bot):
     await bot.add_cog(PPLeaderboard(bot))
