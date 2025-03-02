@@ -86,21 +86,25 @@ class PPLeaderboard(commands.Cog):
 
     @reset_leaderboard.before_loop
     async def before_reset_leaderboard(self):
-        """Waits until next Sunday midnight UTC before starting the reset task"""
+        """Wait until next Sunday midnight UTC before starting the reset task"""
         await self.bot.wait_until_ready()
-        
+
         now = datetime.utcnow()
-        sunday_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        print(f"Current UTC time: {now}")
 
-        # If today isn't Sunday or it's past midnight, find the next Sunday
-        while sunday_midnight.weekday() != 6:
-            sunday_midnight += timedelta(days=1)
+        # Calculate next Sunday midnight UTC
+        days_until_sunday = (6 - now.weekday()) % 7  # Days until next Sunday
+        if days_until_sunday == 0 and now.hour >= 0:  # If it's already past midnight on Sunday
+            days_until_sunday = 7  # Schedule for the next Sunday
 
-        # Calculate the delay until next Sunday midnight
-        delay = (sunday_midnight - now).total_seconds()
-        print(f"Next leaderboard reset scheduled in {delay / 3600:.2f} hours.")
+        next_sunday = now + timedelta(days=days_until_sunday)
+        next_sunday_midnight = next_sunday.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        await asyncio.sleep(delay)  # ✅ Delay execution until next Sunday midnight
+        # Calculate delay
+        delay = (next_sunday_midnight - now).total_seconds()
+        print(f"✅ Next leaderboard reset scheduled in {delay / 3600:.2f} hours.")
+
+        await asyncio.sleep(delay)  # ✅ Wait until next Sunday at 00:00 UTC
 
 # ✅ Setup function to load cog
 async def setup(bot):
