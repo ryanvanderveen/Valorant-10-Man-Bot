@@ -3,6 +3,7 @@ import random
 import asyncpg
 import asyncio
 import pytz  # ✅ Timezone handling
+import os
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
 
