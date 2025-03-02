@@ -104,6 +104,36 @@ class PPLeaderboard(commands.Cog):
                         # Assign the role to the new biggest PP holder
                         await biggest_member.add_roles(role)
                         print(f"🏆 {biggest_member.name} now holds 'Current HOG DADDY'!")
+    
+    @commands.command()
+    async def leaderboard(self, ctx):
+        """Displays the top 5 users with the biggest PP sizes"""
+        print(f"🔍 {ctx.author} triggered 'pls leaderboard'")
+
+        async with self.db.acquire() as conn:
+            top_users = await conn.fetch("SELECT user_id, size FROM pp_sizes ORDER BY size DESC LIMIT 5")
+
+        if not top_users:
+            await ctx.send("No pp sizes recorded yet! Use `pls pp` to start.")
+            return
+
+        embed = discord.Embed(title="🍆 PP Leaderboard - Biggest of the Week", color=discord.Color.purple())
+
+        for rank, record in enumerate(top_users, start=1):
+            user_id, size = record["user_id"], record["size"]
+            
+            # Try fetching user from cache, otherwise fetch from API
+            user = self.bot.get_user(user_id)
+            if user is None:
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                except discord.NotFound:
+                    user = None  # User no longer exists
+
+            username = user.name if user else f"Unknown User ({user_id})"
+            embed.add_field(name=f"#{rank}: {username}", value=f"Size: 8{'=' * size}D (**{size} inches**)", inline=False)
+
+        await ctx.send(embed=embed)
 
     @tasks.loop(hours=24)
     async def reset_leaderboard(self):
