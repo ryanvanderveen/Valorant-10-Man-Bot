@@ -14,6 +14,8 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     print("❌ ERROR: DATABASE_URL is not set! Please check Railway environment variables.")
     exit(1)
+else:
+    print(f"✅ DATABASE_URL is set: {DATABASE_URL}")  # Debugging
 
 # Load config.yaml
 config_path = "config.yaml"
