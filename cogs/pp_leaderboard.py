@@ -74,9 +74,11 @@ class PPLeaderboard(commands.Cog):
 
     @tasks.loop(hours=24)
     async def reset_leaderboard(self):
-        """Resets the leaderboard every Sunday at midnight"""
+        """Resets the leaderboard every Sunday at midnight UTC"""
         now = datetime.utcnow()
-        if now.weekday() == 6 and now.hour == 0:  # Sunday midnight UTC
+        print(f"Checking for leaderboard reset... (Current UTC time: {now})")  # ✅ Debugging
+
+        if now.weekday() == 6 and now.hour == 0:  # ✅ Sunday at midnight UTC
             async with aiosqlite.connect(DATABASE_FILE) as db:
                 await db.execute("DELETE FROM pp_sizes")  # ✅ Clears the table
                 await db.commit()
@@ -84,8 +86,21 @@ class PPLeaderboard(commands.Cog):
 
     @reset_leaderboard.before_loop
     async def before_reset_leaderboard(self):
-        """Wait until bot is ready before starting reset task"""
+        """Waits until next Sunday midnight UTC before starting the reset task"""
         await self.bot.wait_until_ready()
+        
+        now = datetime.utcnow()
+        sunday_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # If today isn't Sunday or it's past midnight, find the next Sunday
+        while sunday_midnight.weekday() != 6:
+            sunday_midnight += timedelta(days=1)
+
+        # Calculate the delay until next Sunday midnight
+        delay = (sunday_midnight - now).total_seconds()
+        print(f"Next leaderboard reset scheduled in {delay / 3600:.2f} hours.")
+
+        await asyncio.sleep(delay)  # ✅ Delay execution until next Sunday midnight
 
 # ✅ Setup function to load cog
 async def setup(bot):
