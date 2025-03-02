@@ -5,21 +5,25 @@ from discord.ext import commands
 from datetime import datetime
 import random
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
 class PPLeaderboard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.DATABASE_URL = os.getenv("DATABASE_URL")  # ✅ Store DATABASE_URL in self
         self.db = None  # ✅ Initialize the database pool
         self.bot.loop.create_task(self.initialize_db())  # ✅ Start database setup on startup
 
     async def initialize_db(self):
         """Creates a database connection pool and ensures the table exists."""
-        if DATABASE_URL.startswith("postgresql://"):
-            DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgres://", 1)  # ✅ Fix asyncpg issue
+        if not self.DATABASE_URL:
+            print("❌ ERROR: DATABASE_URL is not set! Check your environment variables.")
+            return
+
+        # ✅ Fix asyncpg issue: Convert postgresql:// → postgres://
+        if self.DATABASE_URL.startswith("postgresql://"):
+            self.DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgres://", 1)
 
         try:
-            self.db = await asyncpg.create_pool(DATABASE_URL)  # ✅ Use connection pool
+            self.db = await asyncpg.create_pool(self.DATABASE_URL)  # ✅ Use connection pool
             print("✅ Successfully connected to PostgreSQL!")
 
             async with self.db.acquire() as conn:
@@ -47,7 +51,7 @@ class PPLeaderboard(commands.Cog):
         now = datetime.utcnow()
 
         try:
-            async with self.db.acquire() as conn:  # ✅ Now using the pool
+            async with self.db.acquire() as conn:
                 row = await conn.fetchrow("SELECT size, last_used FROM pp_sizes WHERE user_id = $1", user_id)
 
                 if row:
