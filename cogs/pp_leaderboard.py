@@ -146,11 +146,20 @@ class PPLeaderboard(commands.Cog):
         now_utc = datetime.utcnow()
         now_et = now_utc.replace(tzinfo=pytz.utc).astimezone(self.ET_TIMEZONE)  # Convert UTC to ET
 
-        days_until_sunday = (6 - now_et.weekday()) % 7
+        # Find the next Sunday at midnight
+        days_until_sunday = (6 - now_et.weekday()) % 7  # How many days until Sunday
         next_sunday = now_et + timedelta(days=days_until_sunday)
-        next_sunday_midnight = next_sunday.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        delay = (next_sunday_midnight - now_et).total_seconds()
+        # Ensure the reset is scheduled for *next* Sunday if today is Sunday and past midnight
+        if now_et.weekday() == 6 and now_et.hour >= 0:
+            next_sunday += timedelta(days=7)
+
+        next_reset_time = next_sunday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        delay = (next_reset_time - now_et).total_seconds()
+        if delay < 0:
+            delay += 7 * 24 * 3600  # If delay is negative, move to the next Sunday
+
         print(f"⏳ Next leaderboard reset scheduled in {delay / 3600:.2f} hours (ET).")
 
         await asyncio.sleep(delay)  # ✅ Wait until next Sunday midnight ET
