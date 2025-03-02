@@ -60,7 +60,8 @@ class PPLeaderboard(commands.Cog):
             async with db.execute("SELECT user_id, size FROM pp_sizes ORDER BY size DESC LIMIT 5") as cursor:
                 top_users = await cursor.fetchall()
 
-        if not top_users:
+        # ✅ Fix: Ensure leaderboard doesn't incorrectly show as empty
+        if top_users is None or len(top_users) == 0:
             await ctx.send("No pp sizes recorded yet! Use `pls pp` to start.")
             return
 
