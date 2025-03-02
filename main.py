@@ -8,6 +8,14 @@ import asyncio
 from discord.ext import commands
 from utils import get_member_name
 from converters import Player
+from dotenv import load_dotenv
+
+load_dotenv()  # ✅ Load environment variables
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    print("❌ ERROR: DATABASE_URL is not set! Please check Railway environment variables.")
+    exit(1)
 
 # Load config.yaml
 config_path = "config.yaml"

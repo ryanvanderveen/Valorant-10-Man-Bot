@@ -16,7 +16,12 @@ class PPLeaderboard(commands.Cog):
 
     async def initialize_db(self):
         """Creates the database and table if they don't exist."""
-        self.db = await asyncpg.connect(DATABASE_URL)  # ✅ Connect to PostgreSQL
+        try:
+            self.db = await asyncpg.connect(DATABASE_URL, ssl="require")  # ✅ Ensure secure connection
+            print("✅ Successfully connected to PostgreSQL!")
+        except Exception as e:
+            print(f"❌ ERROR: Unable to connect to PostgreSQL: {e}")
+            exit(1)
         await self.db.execute(
             """CREATE TABLE IF NOT EXISTS pp_sizes (
                 user_id BIGINT PRIMARY KEY, 
