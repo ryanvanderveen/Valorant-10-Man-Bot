@@ -21,7 +21,11 @@ else:
 # Initialize bot
 intents = discord.Intents.default()
 intents.message_content = True  # ✅ Ensures bot can read messages
-bot = commands.Bot(command_prefix=config["prefix"], intents=intents, help_command=None)  # ✅ Disables default help
+def custom_prefix(bot, message):
+    return commands.when_mentioned_or("pls ", "Pls ", "PLS ", "pLS ", "pLs ", "plS ")(bot, message)
+
+bot = commands.Bot(command_prefix=custom_prefix, intents=intents, help_command=None)
+
 
 async def load_cogs():
     """Loads all cogs asynchronously."""
