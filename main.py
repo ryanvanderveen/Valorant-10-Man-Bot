@@ -8,9 +8,7 @@ import asyncio
 from discord.ext import commands
 from utils import get_member_name
 from converters import Player
-from dotenv import load_dotenv
 
-load_dotenv()  # ✅ Load environment variables
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
