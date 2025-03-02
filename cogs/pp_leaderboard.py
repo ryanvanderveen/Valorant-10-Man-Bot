@@ -77,15 +77,15 @@ class PPLeaderboard(commands.Cog):
                 print(f"✅ Updated PP size for {user.name}: {size} inches")
                 await ctx.send(f"{user.mention}'s new pp size: 8{'=' * size}D! (**{size} inches**) 🎉")
 
-                # Check if they have the biggest PP right now
-                await self.update_current_biggest(ctx.guild, user_id)
+                # ✅ Update the "Current HOG DADDY" role immediately if this is the biggest PP
+                await self.update_current_biggest(ctx.guild)
 
         except Exception as e:
             print(f"❌ Database error: {e}")
             await ctx.send(f"❌ Database error: {e}")
 
-    async def update_current_biggest(self, guild, new_winner_id):
-        """Assigns the 'Current HOG DADDY' role to the biggest PP holder"""
+    async def update_current_biggest(self, guild):
+        """Assigns the 'Current HOG DADDY' role to the biggest PP holder immediately"""
         async with self.db.acquire() as conn:
             biggest = await conn.fetchrow("SELECT user_id FROM pp_sizes ORDER BY size DESC LIMIT 1")
 
