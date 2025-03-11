@@ -51,8 +51,18 @@ class PPLeaderboard(commands.Cog):
 
         user = user or ctx.author
         user_id = user.id
-        size = random.randint(0, 20)
         now = datetime.utcnow()
+
+        # Define possible PP sizes and their weights
+        sizes = list(range(21))  # 0 to 20 inches
+        weights = [
+            1,  2,  3,  5,  7,  10,  15,  18,  20,  25,  # 0-9 (smaller sizes rarer)
+            30, 30, 25, 20, 15, 10,  7,   5,   3,   2,   # 10-19 (common around 10-12)
+            1  # 20 inches (ultra rare)
+        ]
+
+        # Generate PP size
+        size = random.choices(sizes, weights=weights, k=1)[0]
 
         try:
             async with self.db.acquire() as conn:
