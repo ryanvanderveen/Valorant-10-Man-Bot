@@ -1,8 +1,8 @@
-﻿import os
+import os
 import asyncpg
 import discord
 import random
-import pytz  # ✅ Timezone handling for ET
+import pytz  # Timezone handling for ET
 import asyncio
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
@@ -11,24 +11,24 @@ class PPLeaderboard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.DATABASE_URL = os.getenv("DATABASE_URL")
-        self.db = None  # ✅ Database pool
-        self.ET_TIMEZONE = pytz.timezone("America/New_York")  # ✅ Eastern Time
-        self.bot.loop.create_task(self.initialize_db())  # ✅ Initialize DB on startup
-        self.reset_leaderboard.start()  # ✅ Start weekly reset task
+        self.db = None  # Database pool
+        self.ET_TIMEZONE = pytz.timezone("America/New_York")  # Eastern Time
+        self.bot.loop.create_task(self.initialize_db())  # Initialize DB on startup
+        self.reset_leaderboard.start()  # Start weekly reset task
 
     async def initialize_db(self):
         """Creates database connection pool and ensures the table exists."""
         if not self.DATABASE_URL:
-            print("❌ ERROR: DATABASE_URL is not set! Check your environment variables.")
+            print(" ERROR: DATABASE_URL is not set! Check your environment variables.")
             return
 
-        # ✅ Fix asyncpg issue: Convert postgresql:// → postgres://
+        # Fix asyncpg issue: Convert postgresql:// → postgres://
         if self.DATABASE_URL.startswith("postgresql://"):
             self.DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgres://", 1)
 
         try:
             self.db = await asyncpg.create_pool(self.DATABASE_URL)
-            print("✅ Successfully connected to PostgreSQL!")
+            print(" Successfully connected to PostgreSQL!")
 
             async with self.db.acquire() as conn:
                 await conn.execute("""
@@ -38,18 +38,24 @@ class PPLeaderboard(commands.Cog):
                         last_used TIMESTAMP DEFAULT NULL
                     )
                 """)
-            print("✅ PostgreSQL database initialized!")
+            print(" PostgreSQL database initialized!")
 
         except Exception as e:
-            print(f"❌ ERROR: Unable to connect to PostgreSQL: {e}")
+            print(f" ERROR: Unable to connect to PostgreSQL: {e}")
             exit(1)
 
     @commands.command()
-    async def pp(self, ctx, user: discord.Member = None):
+    async def pp(self, ctx, mentioned_user: discord.Member = None):
         """Generate a random PP size with a 1-hour cooldown"""
-        print(f"🔍 {ctx.author} triggered 'pls pp'")
+        print(f" {ctx.author} triggered 'pls pp'")
 
-        user = user or ctx.author
+        # Check if another user was mentioned
+        if mentioned_user is not None and mentioned_user != ctx.author:
+            await ctx.send(f" Sorry {ctx.author.mention}, you can only check your own pp size!")
+            return
+
+        # If no user was mentioned or the mentioned user is the author, proceed with the author
+        user = ctx.author
         user_id = user.id
         now = datetime.utcnow()
 
@@ -74,8 +80,8 @@ class PPLeaderboard(commands.Cog):
                     if elapsed_time < 3600:
                         remaining_time = 3600 - elapsed_time
                         minutes, seconds = divmod(int(remaining_time), 60)
-                        print(f"🕒 Cooldown Active: {minutes}m {seconds}s remaining")
-                        await ctx.send(f"⏳ {user.mention}, you need to wait **{minutes}m {seconds}s** before checking your PP size again! 🍆")
+                        print(f"  Cooldown Active: {minutes}m {seconds}s remaining")
+                        await ctx.send(f" {user.mention}, you need to wait **{minutes}m {seconds}s** before checking your PP size again! ")
                         return
 
                 await conn.execute(
@@ -84,15 +90,15 @@ class PPLeaderboard(commands.Cog):
                     user_id, size
                 )
 
-                print(f"✅ Updated PP size for {user.name}: {size} inches")
-                await ctx.send(f"{user.mention}'s new pp size: 8{'=' * size}D! (**{size} inches**) 🎉")
+                print(f" Updated PP size for {user.name}: {size} inches")
+                await ctx.send(f"{user.mention}'s new pp size: 8{'=' * size}D! (**{size} inches**) ")
 
-                # ✅ Update the "Current HOG DADDY" role immediately if this is the biggest PP
+                # Update the "Current HOG DADDY" role immediately if this is the biggest PP
                 await self.update_current_biggest(ctx.guild)
 
         except Exception as e:
-            print(f"❌ Database error: {e}")
-            await ctx.send(f"❌ Database error: {e}")
+            print(f" Database error: {e}")
+            await ctx.send(f" Database error: {e}")
 
     async def update_current_biggest(self, guild):
         """Assigns the 'Current HOG DADDY' role to the biggest PP holder immediately"""
@@ -101,7 +107,7 @@ class PPLeaderboard(commands.Cog):
 
             if biggest:
                 biggest_user_id = biggest["user_id"]
-                role = discord.utils.get(guild.roles, name="Current HOG DADDY")  # 🔹 Ensure this role exists
+                role = discord.utils.get(guild.roles, name="Current HOG DADDY")  # Ensure this role exists
 
                 if role:
                     biggest_member = guild.get_member(biggest_user_id)
@@ -109,16 +115,26 @@ class PPLeaderboard(commands.Cog):
                         # Remove role from all members first
                         for member in guild.members:
                             if role in member.roles:
-                                await member.remove_roles(role)
+                                try:
+                                    await member.remove_roles(role)
+                                except discord.Forbidden:
+                                    print(f"⚠️ Bot lacks permissions to remove role '{role.name}' from {member.name}")
+                                except discord.HTTPException as e:
+                                    print(f"⚠️ Failed to remove role '{role.name}' from {member.name}: {e}")
 
                         # Assign the role to the new biggest PP holder
-                        await biggest_member.add_roles(role)
-                        print(f"🏆 {biggest_member.name} now holds 'Current HOG DADDY'!")
-    
+                        try:
+                            await biggest_member.add_roles(role)
+                            print(f"🏆 {biggest_member.name} now holds 'Current HOG DADDY'!")
+                        except discord.Forbidden:
+                            print(f"⚠️ Bot lacks permissions to add role '{role.name}' to {biggest_member.name}")
+                        except discord.HTTPException as e:
+                            print(f"⚠️ Failed to add role '{role.name}' to {biggest_member.name}: {e}")
+
     @commands.command()
     async def leaderboard(self, ctx):
         """Displays the top 5 users with the biggest PP sizes"""
-        print(f"🔍 {ctx.author} triggered 'pls leaderboard'")
+        print(f" {ctx.author} triggered 'pls leaderboard'")
 
         async with self.db.acquire() as conn:
             top_users = await conn.fetch("SELECT user_id, size FROM pp_sizes ORDER BY size DESC LIMIT 5")
@@ -127,7 +143,7 @@ class PPLeaderboard(commands.Cog):
             await ctx.send("No pp sizes recorded yet! Use `pls pp` to start.")
             return
 
-        embed = discord.Embed(title="🍆 PP Leaderboard - Biggest of the Week", color=discord.Color.purple())
+        embed = discord.Embed(title=" PP Leaderboard - Biggest of the Week", color=discord.Color.purple())
 
         for rank, record in enumerate(top_users, start=1):
             user_id, size = record["user_id"], record["size"]
@@ -151,31 +167,41 @@ class PPLeaderboard(commands.Cog):
         now_utc = datetime.utcnow()
         now_et = now_utc.replace(tzinfo=pytz.utc).astimezone(self.ET_TIMEZONE)  # Convert UTC to ET
 
-        print(f"🔍 Checking reset time... Current ET: {now_et.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"  Checking reset time... Current ET: {now_et.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        if now_et.weekday() == 6 and now_et.hour == 0:  # ✅ Sunday at midnight ET
+        if now_et.weekday() == 6 and now_et.hour == 0:  # Sunday at midnight ET
             async with self.db.acquire() as conn:
                 # Get the user with the biggest PP
                 winner = await conn.fetchrow("SELECT user_id FROM pp_sizes ORDER BY size DESC LIMIT 1")
 
                 if winner:
                     winner_id = winner["user_id"]
-                    guild = self.bot.get_guild(934160898828931143)  # 🔹 Replace with your server ID
+                    guild = self.bot.get_guild(934160898828931143)  # Replace with your server ID
                     if guild:
-                        role = discord.utils.get(guild.roles, name="HOG DADDY")  # 🔹 Ensure this role exists
+                        role = discord.utils.get(guild.roles, name="HOG DADDY")  # Ensure this role exists
                         if role:
                             winner_member = guild.get_member(winner_id)
                             if winner_member:
                                 # Remove the role from all members before assigning
                                 for member in guild.members:
                                     if role in member.roles:
-                                        await member.remove_roles(role)
+                                        try:
+                                            await member.remove_roles(role)
+                                        except discord.Forbidden:
+                                            print(f"⚠️ Bot lacks permissions to remove role '{role.name}' from {member.name} (weekly reset)")
+                                        except discord.HTTPException as e:
+                                            print(f"⚠️ Failed to remove role '{role.name}' from {member.name} (weekly reset): {e}")
                                 
                                 # Assign role to the weekly winner
-                                await winner_member.add_roles(role)
-                                print(f"🏆 {winner_member.name} has won the 'HOG DADDY' role!")
+                                try:
+                                    await winner_member.add_roles(role)
+                                    print(f"🏆 {winner_member.name} has won the 'HOG DADDY' role!")
+                                except discord.Forbidden:
+                                    print(f"⚠️ Bot lacks permissions to add role '{role.name}' to {winner_member.name} (weekly reset)")
+                                except discord.HTTPException as e:
+                                    print(f"⚠️ Failed to add role '{role.name}' to {winner_member.name} (weekly reset): {e}")
 
-                await conn.execute("DELETE FROM pp_sizes")  # ✅ Clears the table
+                await conn.execute("DELETE FROM pp_sizes")  # Clears the table
             print("🔄 PP Leaderboard has been reset for the new week!")
 
     @reset_leaderboard.before_loop
@@ -200,9 +226,9 @@ class PPLeaderboard(commands.Cog):
         if delay < 0:
             delay += 7 * 24 * 3600  # If delay is negative, move to the next Sunday
 
-        print(f"⏳ Next leaderboard reset scheduled in {delay / 3600:.2f} hours (ET).")
+        print(f"  Next leaderboard reset scheduled in {delay / 3600:.2f} hours (ET).")
 
-        await asyncio.sleep(delay)  # ✅ Wait until next Sunday midnight ET
+        await asyncio.sleep(delay)  # Wait until next Sunday midnight ET
 
 async def setup(bot):
     await bot.add_cog(PPLeaderboard(bot))
