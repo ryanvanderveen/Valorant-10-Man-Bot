@@ -621,6 +621,7 @@ class PPLeaderboard(commands.Cog):
     @commands.guild_only()
     async def trivia(self, ctx):
         """Asks a trivia question from the Open Trivia Database."""
+        print(f"--- DEBUG: Trivia command entered by {ctx.author.name} in #{ctx.channel.name} ---") # DEBUG LINE
         if self.current_trivia_question:
             # Check if the existing question message still exists
             try:
@@ -1030,3 +1031,4 @@ class PPLeaderboard(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(PPLeaderboard(bot))
+    print("--- DEBUG: PPLeaderboard Cog setup complete. ---") # DEBUG LINE
