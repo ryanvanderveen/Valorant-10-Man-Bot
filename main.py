@@ -1,4 +1,4 @@
-﻿# This example requires the 'message_content' privileged intents
+# This example requires the 'message_content' privileged intents
 
 import os
 import discord
@@ -39,7 +39,17 @@ bot = commands.Bot(command_prefix=custom_prefix, intents=intents, help_command=N
 
 async def load_cogs():
     """Loads all cogs asynchronously."""
-    COGS = ["pp_leaderboard", "utility", "fun"]  # ✅ Ensure the correct cog names
+    COGS = [
+        "pp_db",         # Database initialization and shared functions
+        "pp_core",       # Core PP functionality
+        "pp_events",     # Event system
+        "pp_items",      # Item and inventory system
+        "pp_minigames",  # Mini-games (trivia, duels, pp-off)
+        "help_cog",      # Help command
+        "info_cog",      # Bot information
+        "utility_core",  # Core utility functions
+        "fun"           # Fun commands
+    ]
     for cog in COGS:
         try:
             await bot.load_extension(f"cogs.{cog}")
