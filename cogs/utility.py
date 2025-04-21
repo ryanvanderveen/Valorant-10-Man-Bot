@@ -1,35 +1,70 @@
-﻿import discord
+import discord
 from discord.ext import commands
 
 class Utility(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="bothelp")
+    # Command to display help information
+    @commands.command(name='help')
     async def bothelp(self, ctx):
         """Displays dynamically generated help information"""
-        embed = discord.Embed(title="📜 Bot Commands", description="Here's what I can do:", color=discord.Color.blue())
+        prefix = "pls " # Assuming 'pls ' is the primary prefix
+        
+        embed = discord.Embed(
+            title="🅿🅿 Bot Help", 
+            description="Here are the available commands:", 
+            color=discord.Color.purple()
+        )
 
-        # Get all commands grouped by category (cog name)
-        command_categories = {}
-        for command in self.bot.commands:
-            if command.cog_name not in command_categories:
-                command_categories[command.cog_name] = []
-            command_categories[command.cog_name].append(f"`pls {command.name}`")
+        # PP Core
+        embed.add_field(
+            name="📏 PP Core", 
+            value=f"`{prefix}pp [@user]` - Roll for your (or someone else's) PP size.\n"
+                  f"`{prefix}leaderboard [global]` - Show the server (or global) PP leaderboard.", 
+            inline=False
+        )
 
-        # Add each category and its commands to the embed
-        for category, commands in command_categories.items():
-            embed.add_field(name=f"**{category} Commands**", value=", ".join(commands), inline=False)
+        # Items
+        embed.add_field(
+            name="🎒 Items",
+            value=f"`{prefix}inventory` or `{prefix}inv` - View your item inventory.\n"
+                  f"`{prefix}use <item_name>` - Use an item from your inventory.",
+            inline=False
+        )
+        
+        # Mini-Games
+        embed.add_field(
+            name="🎮 Mini-Games",
+            value=f"`{prefix}trivia` - Start a trivia question. First correct answer (A-D) wins!\n"
+                  f"`{prefix}duel <@user>` - Challenge another user to a PP duel.\n"
+                  f"`{prefix}accept <@user>` - Accept a pending duel challenge.\n"
+                  f"`{prefix}ppoff [minutes]` - Start a timed PP Off event (default 1 min). Highest roll wins!",
+            inline=False
+        )
 
-        embed.set_footer(text="Use pls <command> to run a command!")
-    
+        # Utility
+        embed.add_field(
+            name="⚙️ Utility", 
+            value=f"`{prefix}help` - Shows this help message.\n"
+                  f"`{prefix}info` - Shows bot information.\n"
+                  f"`{prefix}ping` - Checks the bot's latency.",
+            inline=False
+        )
+
+        embed.set_footer(text="Remember to use the prefix 'pls ' before commands!")
         await ctx.send(embed=embed)
 
+    # Command to display bot info
     @commands.command()
     async def info(self, ctx):
         """Displays bot info"""
-        embed = discord.Embed(title="Bot Info", description="PP Bot", color=discord.Color.green())
-        embed.set_footer(text=f"Requested by {ctx.author.name}")
+        embed = discord.Embed(title="🅿🅿 Bot Info", description="The one and only PP measuring bot, with extra fun!", color=discord.Color.purple())
+        embed.add_field(name="<:peepoSmile:1105687381285158972> Creator", value="Built by ryanvanderveen", inline=False) # Feel free to change this!
+        embed.add_field(name="<:python:1230960341111668736> Library", value=f"discord.py {discord.__version__}", inline=True)
+        embed.add_field(name="<:member:1105687397014466651> Servers", value=f"{len(self.bot.guilds)}", inline=True)
+        # Add a link to your repo if you have one!
+        # embed.add_field(name="Source Code", value="[GitHub Repo](YOUR_REPO_LINK_HERE)", inline=False)
         await ctx.send(embed=embed)
 
 # ✅ Fix: Correctly define setup function for bot
