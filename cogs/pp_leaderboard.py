@@ -918,50 +918,68 @@ class PPLeaderboard(commands.Cog):
         # -------------------
 
     # --- PP Off Command ---
-    async def _calculate_and_announce_ppoff_results(self):
-        """Calculates PP Off results, announces winner, and resets state."""
-        print(f"[DEBUG ppoff] _calculate_and_announce_ppoff_results called. Active: {self.pp_off_active}, Channel: {self.pp_off_channel}") # DEBUG
-        if not self.pp_off_active or not self.pp_off_channel:
-            print(" PP Off results calculation triggered, but no active PP Off found or channel missing.")
-            self.pp_off_active = False # Ensure state is reset
+    async def _calculate_and_announce_ppoff_results(self): 
+        """Calculates and announces the winner of the PP Off event."""
+        # Use the stored channel, don't rely on ctx
+        channel_to_announce = self.pp_off_channel
+        if not channel_to_announce:
+            print("[ERROR ppoff results] PP Off channel is None. Cannot announce results.")
+            # Reset state even if announcement fails to prevent blocking future events
+            self.pp_off_active = False
+            self.pp_off_participants = {}
+            self.pp_off_channel = None
+            self.pp_off_end_time = None
             return
 
-        print(f"Calculating PP Off results for channel {self.pp_off_channel.id}...")
-        channel_to_announce = self.pp_off_channel # Store before resetting
+        print(f"[DEBUG ppoff results] Calculating PP Off results for channel {channel_to_announce.id}...")
+        print(f"[DEBUG ppoff results] Participants: {self.pp_off_participants}")
 
-        print(f"[DEBUG ppoff] Participants: {self.pp_off_participants}") # DEBUG
         if not self.pp_off_participants:
             await channel_to_announce.send("🏁 The PP Off has ended! Nobody participated. 🤷‍♂️")
         else:
-            # Find the highest score
-            max_score = -1
-            for score in self.pp_off_participants.values():
-                if score > max_score:
-                    max_score = score
+            # Find the winner (user ID with the highest score)
+            winner_id = max(self.pp_off_participants, key=self.pp_off_participants.get)
+            winning_score = self.pp_off_participants[winner_id]
+
+            # --- Fetch Winner User Object --- 
+            winner_user = self.bot.get_user(winner_id)
+            if not winner_user:
+                try:
+                    winner_user = await self.bot.fetch_user(winner_id)
+                except discord.NotFound:
+                    print(f"[ERROR ppoff results] Could not find user with ID {winner_id} to announce winner.")
+                    winner_mention = f"User ID {winner_id}" # Fallback
+                except Exception as e:
+                    print(f"[ERROR ppoff results] Error fetching user {winner_id}: {e}")
+                    winner_mention = f"User ID {winner_id}" # Fallback
             
-            # Find all winners with that score
-            winners = []
-            guild = channel_to_announce.guild
-            for user_id, score in self.pp_off_participants.items():
-                print(f"[DEBUG ppoff] Checking participant {user_id} with score {score}") # DEBUG
-                if score == max_score:
-                    member = guild.get_member(user_id)
-                    winners.append(member.mention if member else f"User ID {user_id}")
-            
-            # Announce results
-            if len(winners) == 1:
-                await channel_to_announce.send(f"🏁 The PP Off has ended! 🏁\n🏆 The winner is {winners[0]} with a massive **{max_score} inches**! 🏆")
-            else:
-                await channel_to_announce.send(f"🏁 The PP Off has ended! 🏁\n🏆 We have a tie between {', '.join(winners)} with **{max_score} inches**! 🏆")
-            
-            print(f" PP Off Winner(s): {winners} with score {max_score}")
+            if winner_user:
+                winner_mention = winner_user.mention
+            # --------------------------------
+
+            # Construct sorted results list for the announcement
+            sorted_participants = sorted(self.pp_off_participants.items(), key=lambda item: item[1], reverse=True)
+            results_text = "\n".join([
+                f"- <@{uid}>: **{score} inches**" for uid, score in sorted_participants[:10] # Show top 10
+            ])
+
+            embed = discord.Embed(
+                title="🏁 PP Off Results! 🏁",
+                description=f"The PP Off has concluded! Congratulations to **{winner_mention}** for achieving the highest score of **{winning_score} inches**! 🎉",
+                color=discord.Color.gold()
+            )
+            if results_text:
+                 embed.add_field(name="Top Scores:", value=results_text, inline=False)
+
+            await channel_to_announce.send(embed=embed)
+            print(f"[DEBUG ppoff results] Announced winner: {winner_mention} ({winner_id}) with score {winning_score}")
 
         # Reset PP Off state
-        print("[DEBUG ppoff] Resetting PP Off state.") # DEBUG
+        print("[DEBUG ppoff results] Resetting PP Off state.")
         self.pp_off_active = False
-        self.pp_off_end_time = None
         self.pp_off_participants = {}
         self.pp_off_channel = None
+        self.pp_off_end_time = None
         print(" PP Off state reset.")
 
     @commands.command(name="ppoff")
