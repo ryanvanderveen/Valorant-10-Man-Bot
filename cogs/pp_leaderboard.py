@@ -222,6 +222,39 @@ class PPLeaderboard(commands.Cog):
             print(f" Duel request from {self.pending_duels[key]['challenger']} to {key} expired.")
             del self.pending_duels[key]
 
+    async def _perform_duel_roll(self, user_id: int) -> int:
+        """Performs a PP roll for a duel, including event/item effects."""
+        # Define possible PP sizes and their weights (same as pls pp)
+        sizes = list(range(21))
+        weights = [
+            1,  2,  3,  5,  7,  10,  15,  18,  20,  25,  # 0-9
+            30, 30, 25, 20, 15, 10,  7,   5,   3,   2,   # 10-19
+            1   # 20
+        ]
+        # TODO: Apply luck_boost modifier to weights if implemented
+
+        base_size = random.choices(sizes, weights=weights, k=1)[0]
+        final_size = base_size
+        event_modifier = 0
+        item_modifier = 0
+        now_utc = datetime.now(timezone.utc)
+
+        # Apply server event effect
+        if self.current_event and now_utc < self.event_end_time:
+            event_modifier = self.event_effect
+
+        # Apply active pp_boost effect
+        active_boost = await self._get_active_effect(user_id, 'pp_boost')
+        if active_boost:
+            item_modifier = active_boost['effect_value']
+            # Note: We don't consume timed boosts during a duel roll
+
+        # Calculate final size
+        final_size += (event_modifier + item_modifier)
+        final_size = max(0, min(20, final_size)) # Clamp size 0-20
+        print(f" Duel roll for {user_id}: Base={base_size}, EventMod={event_modifier}, ItemMod={item_modifier} -> Final={final_size}")
+        return final_size
+
     # -------------------------
 
     @commands.command()
@@ -599,28 +632,34 @@ class PPLeaderboard(commands.Cog):
     @event_task.before_loop
     async def before_event_task(self):
         await self.bot.wait_until_ready()
-        # Try to find the announcement channel
-        guild_id = 934160898828931143 # Hardcoded guild ID, replace if needed
-        guild = self.bot.get_guild(guild_id)
-        if guild:
-            # Look for 'announcements' or 'general'
-            channel = discord.utils.get(guild.text_channels, name='announcements')
-            if not channel:
-                channel = discord.utils.get(guild.text_channels, name='general')
-            
-            if channel:
-                self.announcement_channel = channel
-                print(f" Event announcements will be sent to #{channel.name}")
-            else:
-                print(" Warning: Could not find 'announcements' or 'general' channel for event messages.")
-        else:
-            print(f" Warning: Could not find Guild ID {guild_id} for event announcements.")
-            
         print(" Event Task Loop Ready.")
+
+        # --- Find Announcement Channel --- 
+        announcement_channel_id = 934181022659129444 # Hardcoded Channel ID
+        self.announcement_channel = self.bot.get_channel(announcement_channel_id)
+        
+        if self.announcement_channel:
+            print(f" Found announcement channel by ID: #{self.announcement_channel.name} ({self.announcement_channel.id})")
+        else:
+            # Attempt to find the guild the channel *should* be in, just for a better warning.
+            guild_for_warning = None
+            for guild in self.bot.guilds:
+                if guild.get_channel(announcement_channel_id):
+                    guild_for_warning = guild
+                    break # Found the guild, unlikely but possible channel is gone
+            if guild_for_warning:
+                 print(f" Warning: Could not find announcement channel with ID {announcement_channel_id} in guild {guild_for_warning.name}. Bot may lack permissions or channel deleted.")
+            else:
+                 print(f" Warning: Could not find announcement channel with ID {announcement_channel_id}. Bot may not be in the correct guild or channel deleted.")
+        # --------------------------------
+
+    @event_task.after_loop
+    async def after_event_task(self):
+        pass
 
     # --- Trivia Command ---
     @commands.command()
-    @commands.cooldown(1, 15, commands.BucketType.user) # Cooldown 15s per user
+    @commands.cooldown(1, 60, commands.BucketType.guild) # Guild-wide cooldown: 1 use per 60 seconds
     @commands.guild_only()
     async def trivia(self, ctx):
         """Asks a trivia question from the Open Trivia Database."""
@@ -672,10 +711,10 @@ class PPLeaderboard(commands.Cog):
                     correct_answer = html.unescape(question_data['correct_answer'])
                     incorrect_answers = [html.unescape(ans) for ans in question_data['incorrect_answers']]
                     
-                    all_choices = incorrect_answers + [correct_answer]
-                    random.shuffle(all_choices)
+                    all_answers = incorrect_answers + [correct_answer]
+                    random.shuffle(all_answers)
                     
-                    choices_text = "\n".join([f"**{chr(65+i)}.** {choice}" for i, choice in enumerate(all_choices)])
+                    choices_text = "\n".join([f"**{chr(65+i)}.** {choice}" for i, choice in enumerate(all_answers)])
                     
                     embed = discord.Embed(
                         title=f"🧠 Trivia Time! ({question_data['category']})",
@@ -689,10 +728,11 @@ class PPLeaderboard(commands.Cog):
                     self.current_trivia_question = {
                         'question': question,
                         'correct_answer': correct_answer,
-                        'choices': all_choices,
+                        'choices': all_answers,
                         'channel': ctx.channel,
                         'message_id': trivia_msg.id,
-                        'ask_time': datetime.now(timezone.utc)
+                        'ask_time': datetime.now(timezone.utc),
+                        'answered_users': set() # Keep track of users who have answered
                     }
                     
                     print(f" Trivia: Asked '{question}' in #{ctx.channel.name}. Correct Answer: {correct_answer}")
@@ -742,6 +782,14 @@ class PPLeaderboard(commands.Cog):
                 # Valid answer format (A, B, C, or D)
                 choice_index = ord(content_lower) - ord('a') # Calculate index (0 for a, 1 for b, etc.)
                 
+                # Check if user already answered
+                if message.author.id in self.current_trivia_question['answered_users']:
+                    # Silently ignore repeat answers from the same user
+                    return
+                    
+                # Mark user as having answered
+                self.current_trivia_question['answered_users'].add(message.author.id)
+
                 # Ensure index is within bounds (should always be if A-D)
                 if 0 <= choice_index < len(self.current_trivia_question['choices']):
                     chosen_answer = self.current_trivia_question['choices'][choice_index]
@@ -774,8 +822,11 @@ class PPLeaderboard(commands.Cog):
                              print(f" Trivia: Error giving reward to {winner.id}: {e}")
                              traceback.print_exc()
                              await message.channel.send(f"🎉 Correct, {winner.mention}! The answer was **{correct_answer}**. (Error giving item reward) 🎉")
-                    # else: # Incorrect answer A-D, just ignore it
-                    #    pass 
+                    else: # Incorrect answer A-D
+                         await message.reply(f"❌ Incorrect, {message.author.mention}! That's not the right answer. Try again next time!", delete_after=10) # Let user know they were wrong
+                         print(f" Trivia: Incorrect answer '{chosen_answer}' by {message.author.name}")
+                         # User is already added to answered_users set
+                         
             # else: # Message is not a single letter A-D, ignore
             #    pass
         # ---------------------------
@@ -836,6 +887,7 @@ class PPLeaderboard(commands.Cog):
     # --- PP Off Command ---
     async def _calculate_and_announce_ppoff_results(self):
         """Calculates PP Off results, announces winner, and resets state."""
+        print(f"[DEBUG ppoff] _calculate_and_announce_ppoff_results called. Active: {self.pp_off_active}, Channel: {self.pp_off_channel}") # DEBUG
         if not self.pp_off_active or not self.pp_off_channel:
             print(" PP Off results calculation triggered, but no active PP Off found or channel missing.")
             self.pp_off_active = False # Ensure state is reset
@@ -844,6 +896,7 @@ class PPLeaderboard(commands.Cog):
         print(f"Calculating PP Off results for channel {self.pp_off_channel.id}...")
         channel_to_announce = self.pp_off_channel # Store before resetting
 
+        print(f"[DEBUG ppoff] Participants: {self.pp_off_participants}") # DEBUG
         if not self.pp_off_participants:
             await channel_to_announce.send("🏁 The PP Off has ended! Nobody participated. 🤷‍♂️")
         else:
@@ -857,6 +910,7 @@ class PPLeaderboard(commands.Cog):
             winners = []
             guild = channel_to_announce.guild
             for user_id, score in self.pp_off_participants.items():
+                print(f"[DEBUG ppoff] Checking participant {user_id} with score {score}") # DEBUG
                 if score == max_score:
                     member = guild.get_member(user_id)
                     winners.append(member.mention if member else f"User ID {user_id}")
@@ -870,88 +924,53 @@ class PPLeaderboard(commands.Cog):
             print(f" PP Off Winner(s): {winners} with score {max_score}")
 
         # Reset PP Off state
+        print("[DEBUG ppoff] Resetting PP Off state.") # DEBUG
         self.pp_off_active = False
         self.pp_off_end_time = None
         self.pp_off_participants = {}
         self.pp_off_channel = None
         print(" PP Off state reset.")
 
-    @commands.command()
-    @commands.cooldown(1, 300, commands.BucketType.guild) # Cooldown 5 mins per guild
+    @commands.command(name="ppoff")
     @commands.guild_only()
     async def ppoff(self, ctx, duration_minutes: int = 1):
         """Starts a PP Off event! Highest 'pls pp' roll in the duration wins.
         
         Usage: pls ppoff [duration_in_minutes=1]
         """
-        if self.pp_off_active:
-            remaining_time = self.pp_off_end_time - datetime.now(timezone.utc)
-            if remaining_time.total_seconds() > 0:
-                await ctx.send(f"A PP Off is already in progress in {self.pp_off_channel.mention}! It ends in {int(remaining_time.total_seconds() // 60)}m {int(remaining_time.total_seconds() % 60)}s.")
-                ctx.command.reset_cooldown(ctx)
-                return
-            else:
-                print("Warning: PP Off flag was active but end time passed. Resetting.")
-                self.pp_off_active = False 
-                self.pp_off_participants = {}
+        print(f"[DEBUG ppoff] Command invoked by {ctx.author.name} with duration {duration_minutes} mins.") # DEBUG
 
-        if duration_minutes <= 0 or duration_minutes > 60:
-            await ctx.send("Please provide a duration between 1 and 60 minutes.")
-            ctx.command.reset_cooldown(ctx)
+        if self.pp_off_active:
+            time_left = self.pp_off_end_time - datetime.now(timezone.utc)
+            await ctx.send(f"A PP Off is already in progress! It ends in {time_left.total_seconds() / 60:.1f} minutes.")
+            print("[DEBUG ppoff] Command aborted: PP Off already active.") # DEBUG
             return
 
+        if duration_minutes <= 0 or duration_minutes > 60:
+            await ctx.send("Please specify a duration between 1 and 60 minutes.")
+            print(f"[DEBUG ppoff] Command aborted: Invalid duration {duration_minutes}.") # DEBUG
+            return
+        
+        print("[DEBUG ppoff] Starting new PP Off.") # DEBUG
         self.pp_off_active = True
         self.pp_off_end_time = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
         self.pp_off_participants = {}
         self.pp_off_channel = ctx.channel
-        duration_seconds = duration_minutes * 60
 
-        print(f"PP Off started by {ctx.author.name} in #{ctx.channel.name} for {duration_minutes} minutes.")
-        await ctx.send(f"**📢 PP Off Event Started! 📢**\nUse `pls pp` in the next **{duration_minutes} minute{'s' if duration_minutes != 1 else ''}** to compete! Highest roll wins bragging rights!")
+        await ctx.send(f"🚨 **PP Off has begun!** 🚨\nUse `pls pp`! Highest roll in the next **{duration_minutes} minute(s)** wins!\nEnds at: {discord.utils.format_dt(self.pp_off_end_time, style='T')}")
 
-        # Schedule the results announcement
-        self.bot.loop.create_task(self._schedule_ppoff_end(duration_seconds))
+        # Schedule the end task
+        print(f"[DEBUG ppoff] Scheduling end task in {duration_minutes} minutes.") # DEBUG
+        self.bot.loop.create_task(self._schedule_ppoff_end(duration_minutes * 60))
+        print("[DEBUG ppoff] End task scheduled.") # DEBUG
 
     async def _schedule_ppoff_end(self, delay_seconds: int):
         """Waits for the duration then triggers PP Off results calculation."""
         await asyncio.sleep(delay_seconds)
+        print(f"[DEBUG ppoff] PP Off delay ({delay_seconds}s) finished. Triggering results calculation.") # DEBUG
         await self._calculate_and_announce_ppoff_results()
 
-    # --- Duel Helper Functions ---
-    async def _perform_duel_roll(self, user_id: int) -> int:
-        """Performs a PP roll for a duel, including event/item effects."""
-        # Define possible PP sizes and their weights (same as pls pp)
-        sizes = list(range(21))
-        weights = [
-            1,  2,  3,  5,  7,  10,  15,  18,  20,  25,  # 0-9
-            30, 30, 25, 20, 15, 10,  7,   5,   3,   2,   # 10-19
-            1   # 20
-        ]
-        # TODO: Apply luck_boost modifier to weights if implemented
-
-        base_size = random.choices(sizes, weights=weights, k=1)[0]
-        final_size = base_size
-        event_modifier = 0
-        item_modifier = 0
-        now_utc = datetime.now(timezone.utc)
-
-        # Apply server event effect
-        if self.current_event and now_utc < self.event_end_time:
-            event_modifier = self.event_effect
-
-        # Apply active pp_boost effect
-        active_boost = await self._get_active_effect(user_id, 'pp_boost')
-        if active_boost:
-            item_modifier = active_boost['effect_value']
-            # Note: We don't consume timed boosts during a duel roll
-
-        # Calculate final size
-        final_size += (event_modifier + item_modifier)
-        final_size = max(0, min(20, final_size)) # Clamp size 0-20
-        print(f" Duel roll for {user_id}: Base={base_size}, EventMod={event_modifier}, ItemMod={item_modifier} -> Final={final_size}")
-        return final_size
-
-    # --- Item/Inventory Commands ---
+    # --- Inventory/Item Commands ---
     @commands.command(aliases=['inv'])
     async def inventory(self, ctx):
         """Displays your current item inventory."""
