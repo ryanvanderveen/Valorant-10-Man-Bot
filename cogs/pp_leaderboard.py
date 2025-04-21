@@ -873,7 +873,7 @@ class PPLeaderboard(commands.Cog):
         self.pp_off_channel = None
         print(" PP Off state reset.")
 
-    @commands.command(aliases=['ppoff'])
+    @commands.command()
     @commands.cooldown(1, 300, commands.BucketType.guild) # Cooldown 5 mins per guild
     @commands.guild_only()
     async def ppoff(self, ctx, duration_minutes: int = 1):
