@@ -258,9 +258,17 @@ class PPLeaderboard(commands.Cog):
     # -------------------------
 
     @commands.command()
+    @commands.cooldown(1, 3600 * 4, commands.BucketType.user) # Cooldown: 1 use per 4 hours per user
+    @commands.guild_only()
     async def pp(self, ctx, mentioned_user: discord.Member = None):
         """Generate a random PP size with a 1-hour cooldown, affected by server events and items."""
         print(f" {ctx.author} triggered 'pls pp'")
+
+        # --- PP Off Cooldown Bypass ---
+        if self.pp_off_active and self.pp_off_channel and self.pp_off_channel.id == ctx.channel.id:
+            print(f"[DEBUG pp] PP Off active in this channel, bypassing cooldown for {ctx.author.name}")
+            ctx.command.reset_cooldown(ctx)
+        # ----------------------------
 
         # Check if another user was mentioned
         if mentioned_user is not None and mentioned_user != ctx.author:
@@ -389,7 +397,7 @@ class PPLeaderboard(commands.Cog):
                 # ---------------------------------------------
 
                 # --- Record score if PP Off is active ---
-                if self.pp_off_active and now_utc < self.pp_off_end_time:
+                if self.pp_off_active and self.pp_off_channel and self.pp_off_channel.id == ctx.channel.id:
                     current_highest = self.pp_off_participants.get(user_id, -1) # Default to -1 if not present
                     if final_size > current_highest:
                         self.pp_off_participants[user_id] = final_size
