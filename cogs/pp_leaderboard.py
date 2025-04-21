@@ -300,13 +300,19 @@ class PPLeaderboard(commands.Cog):
             async with self.db.acquire() as conn:
                 # --- Manual Cooldown Check (only if PP Off is NOT active here) ---
                 if not is_pp_off_active_here:
-                    bucket = self.pp.get_cooldown_mapping().get_bucket(ctx.message)
-                    retry_after = bucket.update_rate_limit() # Returns seconds remaining if on cooldown
-                    if retry_after:
-                        minutes, seconds = divmod(int(retry_after), 60)
-                        print(f"  Cooldown Active: {minutes}m {seconds}s remaining")
-                        await ctx.send(f" {user.mention}, you need to wait **{minutes}m {seconds}s** before checking your PP size again! ")
-                        return # Stop command execution if on cooldown
+                    # Use the Cog's cooldown mapping, not the command's directly
+                    mapping = self.get_cooldown_mapping() 
+                    if mapping:
+                        bucket = mapping.get_bucket(ctx.message) 
+                        if bucket:
+                            retry_after = bucket.update_rate_limit() # Returns seconds remaining if on cooldown
+                            if retry_after:
+                                minutes, seconds = divmod(int(retry_after), 60)
+                                print(f"  Cooldown Active: {minutes}m {seconds}s remaining")
+                                await ctx.send(f" {user.mention}, you need to wait **{minutes}m {seconds}s** before checking your PP size again! ")
+                                return # Stop command execution if on cooldown
+                    else:
+                        print(" Warning: Could not get cooldown mapping for 'pp' command.") # Should not happen
                 # -----------------------------------------------------------------
 
                 # --- Initial Roll & Effect Application ---
