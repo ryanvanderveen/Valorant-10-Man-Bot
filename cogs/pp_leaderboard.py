@@ -258,17 +258,18 @@ class PPLeaderboard(commands.Cog):
     # -------------------------
 
     @commands.command()
-    @commands.cooldown(1, 3600 * 4, commands.BucketType.user) # Cooldown: 1 use per 4 hours per user
+    # @commands.cooldown(1, 3600 * 4, commands.BucketType.user) # Removed decorator - Handled manually below
     @commands.guild_only()
     async def pp(self, ctx, mentioned_user: discord.Member = None):
-        """Generate a random PP size with a 1-hour cooldown, affected by server events and items."""
+        """Generate a random PP size with a 4-hour cooldown, affected by server events and items."""
         print(f" {ctx.author} triggered 'pls pp'")
 
-        # --- PP Off Cooldown Bypass ---
+        # --- PP Off Active Check & Cooldown Bypass ---
+        is_pp_off_active_here = False
         if self.pp_off_active and self.pp_off_channel and self.pp_off_channel.id == ctx.channel.id:
+            is_pp_off_active_here = True
             print(f"[DEBUG pp] PP Off active in this channel, bypassing cooldown for {ctx.author.name}")
-            ctx.command.reset_cooldown(ctx)
-        # ----------------------------
+        # -------------------------------------------
 
         # Check if another user was mentioned
         if mentioned_user is not None and mentioned_user != ctx.author:
@@ -297,22 +298,16 @@ class PPLeaderboard(commands.Cog):
 
         try:
             async with self.db.acquire() as conn:
-                # --- Cooldown Check ---
-                row = await conn.fetchrow("SELECT size, last_used FROM pp_sizes WHERE user_id = $1", user_id)
-                if row:
-                    last_used = row["last_used"]
-                    # Ensure last_used is timezone-aware (assuming stored as UTC)
-                    if last_used and last_used.tzinfo is None:
-                         last_used = last_used.replace(tzinfo=timezone.utc)
-
-                    elapsed_time = (now_utc - last_used).total_seconds() if last_used else 3601
-                    if elapsed_time < 3600:
-                        remaining_time = 3600 - elapsed_time
-                        minutes, seconds = divmod(int(remaining_time), 60)
+                # --- Manual Cooldown Check (only if PP Off is NOT active here) ---
+                if not is_pp_off_active_here:
+                    bucket = self.pp.get_cooldown_mapping().get_bucket(ctx.message)
+                    retry_after = bucket.update_rate_limit() # Returns seconds remaining if on cooldown
+                    if retry_after:
+                        minutes, seconds = divmod(int(retry_after), 60)
                         print(f"  Cooldown Active: {minutes}m {seconds}s remaining")
                         await ctx.send(f" {user.mention}, you need to wait **{minutes}m {seconds}s** before checking your PP size again! ")
-                        return
-                # --------------------
+                        return # Stop command execution if on cooldown
+                # -----------------------------------------------------------------
 
                 # --- Initial Roll & Effect Application ---
                 initial_roll = random.choices(sizes, weights=weights, k=1)[0]
@@ -397,7 +392,7 @@ class PPLeaderboard(commands.Cog):
                 # ---------------------------------------------
 
                 # --- Record score if PP Off is active ---
-                if self.pp_off_active and self.pp_off_channel and self.pp_off_channel.id == ctx.channel.id:
+                if is_pp_off_active_here:
                     current_highest = self.pp_off_participants.get(user_id, -1) # Default to -1 if not present
                     if final_size > current_highest:
                         self.pp_off_participants[user_id] = final_size
@@ -587,16 +582,17 @@ class PPLeaderboard(commands.Cog):
         await asyncio.sleep(delay)  # Wait until next Sunday midnight ET
 
     # --- Event Task Loop ---
-    @tasks.loop(minutes=30) # Check roughly every 30 minutes
+    @tasks.loop(hours=1) # Check every hour
     async def event_task(self):
-        now = datetime.now(timezone.utc)
-        print(f" Running event check at {now.isoformat()}...")
+        now_utc = datetime.now(timezone.utc)
+        now_et = now_utc.astimezone(self.ET_TIMEZONE) # Get current Eastern Time
+        print(f" Running event check at {now_utc.isoformat()} (ET: {now_et.strftime('%Y-%m-%d %H:%M:%S')})...")
         
         # Also periodically clear expired effects globally
         await self._clear_expired_effects()
 
-        # Check if current event has ended
-        if self.current_event and now >= self.event_end_time:
+        # --- Check if current event has ended ---
+        if self.current_event and now_utc >= self.event_end_time:
             print(f" Event '{self.current_event['name']}' ended.")
             if self.announcement_channel:
                 embed = discord.Embed(description=self.current_event['end_msg'], color=self.current_event['color'])
@@ -609,38 +605,60 @@ class PPLeaderboard(commands.Cog):
             self.current_event = None
             self.event_end_time = None
             self.event_effect = 0
-            return # Don't start a new event immediately after one ends
+            # Don't start a new event immediately after one ends in the same check
+            # The next hourly check will handle starting a new one if conditions are met
+        # -------------------------------------
 
-        # If no event is active, roll dice to start one
-        if not self.current_event:
-            # Adjust probability as needed (e.g., 20% chance every 30 mins)
-            if random.randint(1, 100) <= 20:
-                self.current_event = random.choice(EVENTS)
-                duration = timedelta(hours=self.current_event['duration_hours'])
-                self.event_end_time = now + duration
-                self.event_effect = self.current_event['effect']
-                print(f" Starting event: {self.current_event['name']} for {duration}")
+        # --- Attempt to start a new event (if none active and within allowed time) ---
+        elif not self.current_event:
+            # Allowed hours: 8 AM to 1 AM ET (inclusive)
+            # Disallowed hours: 2, 3, 4, 5, 6, 7
+            if now_et.hour not in [2, 3, 4, 5, 6, 7]:
+                # Adjust probability (e.g., 30% chance every hour during allowed times)
+                if random.randint(1, 100) <= 30:
+                    self.current_event = random.choice(EVENTS)
+                    duration = timedelta(hours=self.current_event['duration_hours'])
+                    # Ensure event starts *exactly* on the hour it was triggered
+                    event_start_time = now_utc.replace(minute=0, second=0, microsecond=0)
+                    self.event_end_time = event_start_time + duration
+                    self.event_effect = self.current_event['effect']
+                    print(f" Starting event: {self.current_event['name']} for {self.current_event['duration_hours']} hour(s) at {event_start_time.isoformat()}")
 
-                if self.announcement_channel:
-                    embed = discord.Embed(title=f"📢 Server Event: {self.current_event['name']}!",
-                                        description=self.current_event['start_msg'],
-                                        color=self.current_event['color'])
-                    embed.set_footer(text=f"This event will last for {self.current_event['duration_hours']} hour(s).")
-                    try:
-                        await self.announcement_channel.send(embed=embed)
-                    except discord.Forbidden:
-                        print(f" Error: Bot lacks permission to send messages in {self.announcement_channel.name}")
-                    except Exception as e:
-                        print(f" Error sending event start message: {e}")
+                    if self.announcement_channel:
+                        embed = discord.Embed(title=f"📢 Server Event: {self.current_event['name']}!",
+                                            description=self.current_event['start_msg'],
+                                            color=self.current_event['color'])
+                        embed.set_footer(text=f"This event will last for {self.current_event['duration_hours']} hour(s). Started at {now_et.strftime('%I:%M %p %Z')}") # Show ET start time
+                        try:
+                            await self.announcement_channel.send(embed=embed)
+                        except discord.Forbidden:
+                            print(f" Error: Bot lacks permission to send messages in {self.announcement_channel.name}")
+                        except Exception as e:
+                            print(f" Error sending event start message: {e}")
+                else:
+                    print(" Rolled dice, but no new event started this hour.")
             else:
-                print(" No new event started.")
+                print(f" Outside allowed time window (2 AM - 7:59 AM ET). No event check performed.")
+        # -----------------------------------------------------------------------------
         else:
-             print(f" Event '{self.current_event['name']}' is still active.")
+             # Event is already active, just log it
+             remaining_time = self.event_end_time - now_utc
+             print(f" Event '{self.current_event['name']}' is still active. Time remaining: {remaining_time}")
 
     @event_task.before_loop
     async def before_event_task(self):
         await self.bot.wait_until_ready()
-        print(" Event Task Loop Ready.")
+        print(" Event Task Loop Ready. Waiting for next hour to start checks...")
+
+        # --- Wait until the top of the next hour ---
+        now = datetime.now(timezone.utc)
+        seconds_past_hour = now.minute * 60 + now.second + now.microsecond / 1_000_000
+        seconds_until_next_hour = 3600 - seconds_past_hour
+        if seconds_until_next_hour > 0:
+            print(f" Waiting {seconds_until_next_hour:.2f} seconds for the next hour ({ (now + timedelta(seconds=seconds_until_next_hour)).strftime('%H:%M:%S %Z') })...")
+            await asyncio.sleep(seconds_until_next_hour)
+        print(" Reached the top of the hour. Starting event loop.")
+        # ----------------------------------------
 
         # --- Find Announcement Channel --- 
         announcement_channel_id = 934181022659129444 # Hardcoded Channel ID
