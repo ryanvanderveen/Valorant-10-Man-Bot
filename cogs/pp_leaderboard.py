@@ -2,12 +2,15 @@ import os
 import asyncpg
 import discord
 import random
-import pytz  # Timezone handling for ET
 import asyncio
+import yaml
+import json
+from datetime import datetime, timedelta, timezone # Added timezone import
+import traceback
+import aiohttp
+import html
 from discord.ext import commands, tasks
-from datetime import datetime, timedelta, timezone
-import aiohttp # For API requests
-import html # For decoding HTML entities
+import pytz  # Timezone handling for ET
 
 # --- Event Definitions ---
 EVENTS = [
@@ -234,7 +237,7 @@ class PPLeaderboard(commands.Cog):
         # If no user was mentioned or the mentioned user is the author, proceed with the author
         user = ctx.author
         user_id = user.id
-        now_utc = datetime.now(timezone.utc) # Use timezone aware datetime
+        now_utc = datetime.now(timezone.utc) # Use timezone-aware datetime
 
         # Clear any expired effects for this user first
         await self._clear_expired_effects(user_id)
