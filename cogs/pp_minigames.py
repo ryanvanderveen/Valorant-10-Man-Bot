@@ -135,6 +135,17 @@ class PPMinigames(commands.Cog):
                 return
             except (discord.NotFound, discord.Forbidden):
                 self.current_trivia_question = None
+        
+        # Check for cooldown
+        retry_after = ctx.command._buckets.get_bucket(ctx.message).get_retry_after()
+        if retry_after:
+            minutes, seconds = divmod(int(retry_after), 60)
+            cooldown_msg = f"{ctx.author.mention}, this command is on cooldown! Try again in "
+            if minutes > 0:
+                cooldown_msg += f"{minutes} minute{'s' if minutes > 1 else ''} and "
+            cooldown_msg += f"{seconds} second{'s' if seconds != 1 else ''}."
+            await ctx.send(cooldown_msg)
+            return
 
         # Categories: 11=Film, 14=TV, 15=Video Games, 32=Cartoons/Animations
         category_id = random.choice([11, 14, 15, 32])
@@ -367,20 +378,55 @@ class PPMinigames(commands.Cog):
             question_msg_id = self.current_trivia_question['message_id']
             self.current_trivia_question = None
 
-            # Award Reroll Token
+            # Award a random item with varying rarity
             db = await self._get_db()
             try:
                 async with db.acquire() as conn:
+                    # Get all available items
+                    items = await conn.fetch("SELECT item_id, name FROM items")
+                    if not items:
+                        raise ValueError("No items found in database")
+                    
+                    # Define item rarities (item_id: weight)
+                    # Lower weight = more rare
+                    item_weights = {
+                        1: 40,  # Growth Potion - common
+                        2: 30,  # Shrink Ray - uncommon
+                        3: 20,  # Lucky Socks - rare
+                        4: 10   # Reroll Token - very rare
+                    }
+                    
+                    # Get all item IDs and their corresponding weights
+                    item_ids = [item['item_id'] for item in items]
+                    weights = [item_weights.get(item_id, 25) for item_id in item_ids]  # Default weight 25 for any new items
+                    
+                    # Choose a random item based on weights
+                    chosen_item_id = random.choices(item_ids, weights=weights, k=1)[0]
+                    chosen_item = next(item for item in items if item['item_id'] == chosen_item_id)
+                    
+                    # Add the item to the user's inventory
                     await conn.execute("""
                         INSERT INTO user_inventory (user_id, item_id, quantity)
-                        VALUES ($1, 4, 1)
+                        VALUES ($1, $2, 1)
                         ON CONFLICT (user_id, item_id)
                         DO UPDATE SET quantity = user_inventory.quantity + 1
-                    """, winner.id)
-                await message.channel.send(
-                    f"🎉 Correct, {winner.mention}! The answer was **{correct_answer}**. "
-                    "You won a **Reroll Token**! 🎉"
-                )
+                    """, winner.id, chosen_item_id)
+                    
+                    # Get rarity text based on weight
+                    weight = item_weights.get(chosen_item_id, 25)
+                    if weight <= 10:
+                        rarity_text = "🌟 VERY RARE 🌟"
+                    elif weight <= 20:
+                        rarity_text = "✨ RARE ✨"
+                    elif weight <= 30:
+                        rarity_text = "🔹 UNCOMMON 🔹"
+                    else:
+                        rarity_text = "COMMON"
+                    
+                    await message.channel.send(
+                        f"🎉 Correct, {winner.mention}! The answer was **{correct_answer}**. "
+                        f"You won a **{chosen_item['name']}**! ({rarity_text}) 🎉"
+                    )
             except Exception as e:
                 print(f"Error giving trivia reward: {e}")
                 await message.channel.send(
