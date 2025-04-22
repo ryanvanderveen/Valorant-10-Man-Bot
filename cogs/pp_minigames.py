@@ -13,6 +13,7 @@ class PPMinigames(commands.Cog):
         self.current_trivia_question = None
         self.trivia_timeout = 30
         self.trivia_reward = 1
+        self._last_trivia_time = {}
 
         # Duel State
         self.pending_duels = {}
@@ -124,10 +125,10 @@ class PPMinigames(commands.Cog):
         await ctx.send(result_message)
 
     @commands.command()
-    @commands.cooldown(1, 60, commands.BucketType.guild)
     @commands.guild_only()
     async def trivia(self, ctx):
         """Asks a trivia question from the Open Trivia Database."""
+        # First check if a trivia is already active
         if self.current_trivia_question:
             try:
                 existing_msg = await self.current_trivia_question['channel'].fetch_message(self.current_trivia_question['message_id'])
@@ -136,16 +137,23 @@ class PPMinigames(commands.Cog):
             except (discord.NotFound, discord.Forbidden):
                 self.current_trivia_question = None
         
-        # Check for cooldown
-        retry_after = ctx.command._buckets.get_bucket(ctx.message).get_retry_after()
-        if retry_after:
-            minutes, seconds = divmod(int(retry_after), 60)
-            cooldown_msg = f"{ctx.author.mention}, this command is on cooldown! Try again in "
-            if minutes > 0:
-                cooldown_msg += f"{minutes} minute{'s' if minutes > 1 else ''} and "
-            cooldown_msg += f"{seconds} second{'s' if seconds != 1 else ''}."
-            await ctx.send(cooldown_msg)
-            return
+        # Check for cooldown using a custom cooldown system
+        # This is more reliable than the built-in cooldown decorator
+        last_trivia_time = getattr(self, '_last_trivia_time', {})
+        current_time = datetime.now(timezone.utc)
+        guild_id = ctx.guild.id
+        
+        if guild_id in last_trivia_time:
+            time_diff = (current_time - last_trivia_time[guild_id]).total_seconds()
+            if time_diff < 60:  # 60 second cooldown
+                seconds_left = int(60 - time_diff)
+                minutes, seconds = divmod(seconds_left, 60)
+                cooldown_msg = f"{ctx.author.mention}, this command is on cooldown! Try again in "
+                if minutes > 0:
+                    cooldown_msg += f"{minutes} minute{'s' if minutes > 1 else ''} and "
+                cooldown_msg += f"{seconds} second{'s' if seconds != 1 else ''}."
+                await ctx.send(cooldown_msg)
+                return
 
         # Categories: 11=Film, 14=TV, 15=Video Games, 32=Cartoons/Animations
         category_id = random.choice([11, 14, 15, 32])
@@ -193,6 +201,11 @@ class PPMinigames(commands.Cog):
                         'ask_time': datetime.now(timezone.utc),
                         'answered_users': set()
                     }
+                    
+                    # Update the last trivia time for this guild
+                    if not hasattr(self, '_last_trivia_time'):
+                        self._last_trivia_time = {}
+                    self._last_trivia_time[ctx.guild.id] = datetime.now(timezone.utc)
                     
                     self.bot.loop.create_task(self._trivia_timeout_check(ctx.channel.id, trivia_msg.id, self.trivia_timeout))
 
@@ -286,6 +299,12 @@ class PPMinigames(commands.Cog):
             channel = self.current_trivia_question['channel']
             correct_answer = self.current_trivia_question['correct_answer']
             self.current_trivia_question = None
+            
+            # When a trivia times out, we should reset the cooldown for that guild
+            guild_id = channel.guild.id
+            if hasattr(self, '_last_trivia_time') and guild_id in self._last_trivia_time:
+                # Set the time to more than 60 seconds ago to reset cooldown
+                self._last_trivia_time[guild_id] = datetime.now(timezone.utc) - timedelta(seconds=61)
 
             try:
                 await channel.send(f"⏰ Time's up! The correct answer was: **{correct_answer}**")
@@ -376,7 +395,14 @@ class PPMinigames(commands.Cog):
         if chosen_answer == correct_answer:
             winner = message.author
             question_msg_id = self.current_trivia_question['message_id']
+            channel = self.current_trivia_question['channel']
             self.current_trivia_question = None
+            
+            # When a trivia is answered correctly, we should reset the cooldown for that guild
+            guild_id = channel.guild.id
+            if hasattr(self, '_last_trivia_time') and guild_id in self._last_trivia_time:
+                # Set the time to more than 60 seconds ago to reset cooldown
+                self._last_trivia_time[guild_id] = datetime.now(timezone.utc) - timedelta(seconds=61)
 
             # Award a random item with varying rarity
             db = await self._get_db()
