@@ -139,12 +139,16 @@ class PPMinigames(commands.Cog):
         
         # Check for cooldown using a custom cooldown system
         # This is more reliable than the built-in cooldown decorator
-        last_trivia_time = getattr(self, '_last_trivia_time', {})
         current_time = datetime.now(timezone.utc)
         guild_id = ctx.guild.id
         
-        if guild_id in last_trivia_time:
-            time_diff = (current_time - last_trivia_time[guild_id]).total_seconds()
+        # Make sure we have the cooldown tracking dictionary
+        if not hasattr(self, '_last_trivia_time'):
+            self._last_trivia_time = {}
+        
+        # Check if this guild has used trivia recently
+        if guild_id in self._last_trivia_time:
+            time_diff = (current_time - self._last_trivia_time[guild_id]).total_seconds()
             if time_diff < 60:  # 60 second cooldown
                 seconds_left = int(60 - time_diff)
                 minutes, seconds = divmod(seconds_left, 60)
@@ -154,6 +158,9 @@ class PPMinigames(commands.Cog):
                 cooldown_msg += f"{seconds} second{'s' if seconds != 1 else ''}."
                 await ctx.send(cooldown_msg)
                 return
+        
+        # Set the cooldown timestamp immediately when command is invoked
+        self._last_trivia_time[guild_id] = current_time
 
         # Categories: 11=Film, 14=TV, 15=Video Games, 32=Cartoons/Animations
         category_id = random.choice([11, 14, 15, 32])
@@ -164,13 +171,11 @@ class PPMinigames(commands.Cog):
                 async with session.get(api_url) as response:
                     if response.status != 200:
                         await ctx.send("Sorry, couldn't fetch a trivia question right now.")
-                        ctx.command.reset_cooldown(ctx)
                         return
                     
                     data = await response.json()
                     if data['response_code'] != 0:
                         await ctx.send("Sorry, couldn't get a unique trivia question. Try again later.")
-                        ctx.command.reset_cooldown(ctx)
                         return
 
                     question_data = data['results'][0]
@@ -202,16 +207,12 @@ class PPMinigames(commands.Cog):
                         'answered_users': set()
                     }
                     
-                    # Update the last trivia time for this guild
-                    if not hasattr(self, '_last_trivia_time'):
-                        self._last_trivia_time = {}
-                    self._last_trivia_time[ctx.guild.id] = datetime.now(timezone.utc)
+                    # The cooldown timestamp was already set at the beginning of the command
                     
                     self.bot.loop.create_task(self._trivia_timeout_check(ctx.channel.id, trivia_msg.id, self.trivia_timeout))
 
             except Exception as e:
                 await ctx.send("An error occurred while fetching trivia.")
-                ctx.command.reset_cooldown(ctx)
                 print(f"Trivia error: {e}")
 
     @commands.command(name="ppoff")
