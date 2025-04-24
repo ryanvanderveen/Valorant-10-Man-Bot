@@ -1,9 +1,73 @@
 import discord
 from discord.ext import tasks, commands
+from discord import ui
 import random
 from datetime import datetime, timezone, timedelta
 import pytz
 import asyncio
+
+class LeaderboardView(ui.View):
+    def __init__(self, bot, interaction_user, all_users, per_page=5):
+        super().__init__(timeout=180) # View times out after 3 minutes
+        self.bot = bot
+        self.interaction_user = interaction_user # Store who initiated the command
+        self.all_users = all_users
+        self.per_page = per_page
+        self.current_page = 0
+        self.total_pages = (len(self.all_users) - 1) // self.per_page # Calculate total pages
+
+        # Initial button states
+        self.update_buttons()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # Only allow the user who initiated the command to interact
+        if interaction.user != self.interaction_user:
+            await interaction.response.send_message("Only the person who used the command can change pages.", ephemeral=True)
+            return False
+        return True
+
+    def update_buttons(self):
+        # Disable/enable buttons based on current page
+        self.children[0].disabled = self.current_page == 0 # Disable previous on first page
+        self.children[1].disabled = self.current_page == self.total_pages # Disable next on last page
+
+    async def create_leaderboard_embed(self, page_num):
+        embed = discord.Embed(title=f" PP Leaderboard - Page {page_num + 1}/{self.total_pages + 1}", color=discord.Color.purple())
+        start_index = page_num * self.per_page
+        end_index = start_index + self.per_page
+        page_users = self.all_users[start_index:end_index]
+
+        if not page_users:
+             embed.description = "No users found on this page."
+             return embed
+
+        for rank, record in enumerate(page_users, start=start_index + 1):
+            user_id, size = record["user_id"], record["size"]
+            user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+            username = user.name if user else f"Unknown User ({user_id})"
+            embed.add_field(
+                name=f"#{rank}: {username}", 
+                value=f"Size: 8{'=' * size}D (**{size} inches**)", 
+                inline=False
+            )
+        return embed
+
+    @ui.button(label="◀ Previous", style=discord.ButtonStyle.grey)
+    async def previous_button(self, interaction: discord.Interaction, button: ui.Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_buttons()
+            new_embed = await self.create_leaderboard_embed(self.current_page)
+            await interaction.response.edit_message(embed=new_embed, view=self)
+
+    @ui.button(label="Next ▶", style=discord.ButtonStyle.grey)
+    async def next_button(self, interaction: discord.Interaction, button: ui.Button):
+        if self.current_page < self.total_pages:
+            self.current_page += 1
+            self.update_buttons()
+            new_embed = await self.create_leaderboard_embed(self.current_page)
+            await interaction.response.edit_message(embed=new_embed, view=self)
+
 
 class PPCore(commands.Cog):
     def __init__(self, bot):
@@ -173,30 +237,23 @@ class PPCore(commands.Cog):
 
     @commands.command()
     async def leaderboard(self, ctx):
-        """Displays the top 5 users with the biggest PP sizes"""
+        """Displays the top PP sizes with pagination."""
         print(f" {ctx.author} triggered 'pls leaderboard'")
 
         db = await self._get_db()
         async with db.acquire() as conn:
-            top_users = await conn.fetch("SELECT user_id, size FROM pp_sizes ORDER BY size DESC LIMIT 5")
+            # Fetch ALL users sorted by size
+            all_users = await conn.fetch("SELECT user_id, size FROM pp_sizes ORDER BY size DESC")
 
-        if not top_users:
+        if not all_users:
             await ctx.send("No pp sizes recorded yet! Use `pls pp` to start.")
             return
 
-        embed = discord.Embed(title=" PP Leaderboard - Biggest of the Week", color=discord.Color.purple())
+        # Create the view and the initial embed
+        view = LeaderboardView(self.bot, ctx.author, all_users)
+        initial_embed = await view.create_leaderboard_embed(0)
 
-        for rank, record in enumerate(top_users, start=1):
-            user_id, size = record["user_id"], record["size"]
-            user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
-            username = user.name if user else f"Unknown User ({user_id})"
-            embed.add_field(
-                name=f"#{rank}: {username}", 
-                value=f"Size: 8{'=' * size}D (**{size} inches**)", 
-                inline=False
-            )
-
-        await ctx.send(embed=embed)
+        await ctx.send(embed=initial_embed, view=view)
 
     async def update_current_biggest(self, guild):
         """Assigns the 'Current HOG DADDY' role to the biggest PP holder"""
