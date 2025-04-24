@@ -11,7 +11,7 @@ class PPMinigames(commands.Cog):
         self.bot = bot
         # Trivia State
         self.current_trivia_question = None
-        self.trivia_timeout = 30
+        self.trivia_timeout = 15
         self.trivia_reward = 1
         self._last_trivia_time = {}
 
@@ -159,9 +159,6 @@ class PPMinigames(commands.Cog):
                 await ctx.send(cooldown_msg)
                 return
         
-        # Set the cooldown timestamp immediately when command is invoked
-        self._last_trivia_time[guild_id] = current_time
-
         # Categories: 11=Film, 14=TV, 15=Video Games, 32=Cartoons/Animations
         category_id = random.choice([11, 14, 15, 32])
         api_url = f"https://opentdb.com/api.php?amount=1&type=multiple&category={category_id}"
@@ -206,8 +203,6 @@ class PPMinigames(commands.Cog):
                         'ask_time': datetime.now(timezone.utc),
                         'answered_users': set()
                     }
-                    
-                    # The cooldown timestamp was already set at the beginning of the command
                     
                     self.bot.loop.create_task(self._trivia_timeout_check(ctx.channel.id, trivia_msg.id, self.trivia_timeout))
 
@@ -399,11 +394,10 @@ class PPMinigames(commands.Cog):
             channel = self.current_trivia_question['channel']
             self.current_trivia_question = None
             
-            # When a trivia is answered correctly, we should reset the cooldown for that guild
-            guild_id = channel.guild.id
-            if hasattr(self, '_last_trivia_time') and guild_id in self._last_trivia_time:
-                # Set the time to more than 60 seconds ago to reset cooldown
-                self._last_trivia_time[guild_id] = datetime.now(timezone.utc) - timedelta(seconds=61)
+            # Set cooldown time when someone answers correctly
+            guild_id = message.guild.id
+            if hasattr(self, '_last_trivia_time'):  # Ensure dict exists
+                self._last_trivia_time[guild_id] = datetime.now(timezone.utc)
 
             # Award a random item with varying rarity
             db = await self._get_db()
@@ -456,10 +450,11 @@ class PPMinigames(commands.Cog):
                     )
             except Exception as e:
                 print(f"Error giving trivia reward: {e}")
-                await message.channel.send(
-                    f"🎉 Correct, {winner.mention}! The answer was **{correct_answer}**. "
-                    "(Error giving item reward) 🎉"
-                )
+                # Send a simplified message if reward fails
+                try:
+                    await channel.send(f"🎉 Correct, {winner.mention}! The answer was: **{correct_answer}** (Error giving item reward)")
+                except (discord.NotFound, discord.Forbidden) as send_e:
+                    print(f"Error sending trivia correct message after reward failure: {send_e}")
         else:
             await message.reply(
                 f"❌ Incorrect, {message.author.mention}! That's not the right answer. "
