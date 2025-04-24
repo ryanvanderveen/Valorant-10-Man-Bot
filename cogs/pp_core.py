@@ -386,11 +386,53 @@ class PPCore(commands.Cog):
 
                     else:
                         await channel.send("🏆 The week has ended, but no one rolled their PP! Leaderboard reset. No new HOG DADDY assigned.")
-{{ ... }}
+                    
+                    # Clear the leaderboard regardless of whether there was a winner
+                    deleted_count_str = await conn.fetchval("DELETE FROM pp_sizes RETURNING count(*)") # Use fetchval for count
+                    deleted_count = int(deleted_count_str) if deleted_count_str else 0
+                    print(f"[Weekly Reset] Cleared {deleted_count} records from pp_sizes table.")
+                    await channel.send("🔄 The weekly PP leaderboard has been reset! Good luck next week!")
+            
+            # Prevent running multiple times within the hour if the check passes early
+            # Sleep until the next hour check. Important this is outside the transaction.
+            await asyncio.sleep(3600 - (now_et.minute*60 + now_et.second)) 
+
+    @weekly_reset_task.before_loop
+    async def before_weekly_reset_task(self):
+        await self.bot.wait_until_ready() # Wait for the bot to be ready before starting the loop
+        
+        while True: # Keep calculating sleep until the first run
+            # Calculate initial delay until the next Sunday midnight ET
+            now_et = datetime.now(self.ET_TIMEZONE)
+            # Calculate days until next Sunday (0=Mon, 6=Sun)
+            days_until_sunday = (6 - now_et.weekday() + 7) % 7 
+            # Target time is next Sunday at 00:00:05 ET (slight buffer)
+            next_sunday_midnight = (now_et + timedelta(days=days_until_sunday)).replace(hour=0, minute=0, second=5, microsecond=0)
+
+            # If it's Sunday but before 5 seconds past midnight, the target is today
+            # If it's Sunday *after* 5 seconds past midnight, aim for *next* Sunday
+            if now_et.weekday() == 6 and now_et >= next_sunday_midnight:
+                next_sunday_midnight += timedelta(days=7)
+            # If it's not Sunday, days_until_sunday ensures we aim for the upcoming Sunday
+                
+            wait_seconds = (next_sunday_midnight - now_et).total_seconds()
+
+            if wait_seconds <= 0: # Should not happen with the logic above, but safety check
+                 wait_seconds = 5 # Wait a few seconds and recalculate
+            
+            print(f"[Weekly Reset] Task started. Waiting {wait_seconds:.2f} seconds until next scheduled run near Sunday Midnight ET ({next_sunday_midnight.strftime('%Y-%m-%d %H:%M:%S %Z%z')}).")
+            await asyncio.sleep(wait_seconds)
+            
+            # Double check if it's the right time after waking up
+            now_et_after_sleep = datetime.now(self.ET_TIMEZONE)
+            if now_et_after_sleep.weekday() == 6 and now_et_after_sleep.hour == 0:
+                 print("[Weekly Reset] Reached target time. Starting first reset cycle.")
+                 break # Exit before_loop and start the main loop check
             else:
                  print("[Weekly Reset] Woke up, but not the right time yet. Recalculating sleep.")
                  # Loop continues to recalculate sleep
 
 
 async def setup(bot):
-{{ ... }}
+    await bot.add_cog(PPCore(bot))
+    print("✅ PPCore Cog loaded")
