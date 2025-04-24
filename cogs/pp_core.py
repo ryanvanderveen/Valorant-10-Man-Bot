@@ -1,13 +1,18 @@
 import discord
-from discord.ext import commands
+from discord.ext import tasks, commands
 import random
 from datetime import datetime, timezone, timedelta
 import pytz
+import asyncio
 
 class PPCore(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.ET_TIMEZONE = pytz.timezone("America/New_York")
+        self.weekly_reset_task.start() # Start the task loop
+
+    def cog_unload(self):
+        self.weekly_reset_task.cancel() # Stop the task when the cog unloads
 
     async def _get_db(self):
         """Get database pool from PPDB cog"""
@@ -195,36 +200,197 @@ class PPCore(commands.Cog):
 
     async def update_current_biggest(self, guild):
         """Assigns the 'Current HOG DADDY' role to the biggest PP holder"""
+        role_name = "Current HOG DADDY"
+        print(f"[Role Update] Starting update for '{role_name}' in guild '{guild.name}' ({guild.id})")
+        
         db = await self._get_db()
         async with db.acquire() as conn:
-            biggest = await conn.fetchrow("SELECT user_id FROM pp_sizes ORDER BY size DESC LIMIT 1")
+            biggest = await conn.fetchrow("SELECT user_id, size FROM pp_sizes ORDER BY size DESC, last_used ASC LIMIT 1")
 
-            if biggest:
-                biggest_user_id = biggest["user_id"]
-                role = discord.utils.get(guild.roles, name="Current HOG DADDY")
+            if not biggest:
+                print(f"[Role Update] No PP scores found in DB for guild {guild.name}. Cannot update role.")
+                # Optional: Remove role from anyone who might still have it if DB is empty?
+                return
 
-                if role:
-                    biggest_member = guild.get_member(biggest_user_id)
-                    if biggest_member:
-                        # Remove role from all members first
-                        for member in guild.members:
-                            if role in member.roles:
+            biggest_user_id = biggest["user_id"]
+            biggest_size = biggest["size"]
+            print(f"[Role Update] Biggest PP user ID: {biggest_user_id} with size {biggest_size}")
+
+            role = discord.utils.get(guild.roles, name=role_name)
+            if not role:
+                print(f"⚠️ [Role Update] Role '{role_name}' not found in guild {guild.name}. Please ensure it exists.")
+                return
+
+            biggest_member = guild.get_member(biggest_user_id)
+            current_holder = None
+            for member in guild.members:
+                if role in member.roles:
+                    current_holder = member
+                    print(f"[Role Update] Found current role holder: {current_holder.name} ({current_holder.id})")
+                    break # Assuming only one holder
+
+            if biggest_member:
+                # Check if the biggest member is already the holder
+                if current_holder and current_holder.id == biggest_member.id:
+                    print(f"[Role Update] {biggest_member.name} already has the '{role_name}' role. No change needed.")
+                    return
+                
+                print(f"[Role Update] Attempting to set {biggest_member.name} as the new '{role_name}'.")
+                # Remove from previous holder if there was one
+                if current_holder:
+                    try:
+                        await current_holder.remove_roles(role, reason=f"New {role_name}: {biggest_member.name}")
+                        print(f"[Role Update] Successfully removed role from previous holder: {current_holder.name}")
+                    except discord.Forbidden:
+                        print(f"⚠️ [Role Update] Bot lacks permissions to remove role '{role.name}' from {current_holder.name}. Check role hierarchy and permissions.")
+                    except discord.HTTPException as e:
+                        print(f"⚠️ [Role Update] Failed to remove role '{role.name}' from {current_holder.name}: {e}")
+                    except Exception as e:
+                        print(f"⚠️ [Role Update] Unexpected error removing role from {current_holder.name}: {e}")
+                
+                # Add to the new biggest member
+                try:
+                    await biggest_member.add_roles(role, reason=f"Achieved biggest PP: {biggest_size} inches")
+                    print(f"[Role Update] Successfully assigned role to new holder: {biggest_member.name}")
+                except discord.Forbidden:
+                    print(f"⚠️ [Role Update] Bot lacks permissions to add role '{role.name}' to {biggest_member.name}. Check role hierarchy and permissions.")
+                except discord.HTTPException as e:
+                    print(f"⚠️ [Role Update] Failed to add role '{role.name}' to {biggest_member.name}: {e}")
+                except Exception as e:
+                    print(f"⚠️ [Role Update] Unexpected error adding role to {biggest_member.name}: {e}")
+
+            else: # Biggest user is not in the guild anymore
+                print(f"[Role Update] Biggest user ID {biggest_user_id} not found in guild {guild.name}. They may have left.")
+                if current_holder:
+                    print(f"[Role Update] Removing role from current holder {current_holder.name} as the top user left.")
+                    try:
+                        await current_holder.remove_roles(role, reason=f"{role_name} user left server")
+                        print(f"[Role Update] Successfully removed role from {current_holder.name} (top user left).")
+                    except discord.Forbidden:
+                        print(f"⚠️ [Role Update] Bot lacks permissions to remove role '{role.name}' from {current_holder.name}.")
+                    except discord.HTTPException as e:
+                        print(f"⚠️ [Role Update] Failed to remove role '{role.name}' from {current_holder.name}: {e}")
+                    except Exception as e:
+                        print(f"⚠️ [Role Update] Unexpected error removing role from {current_holder.name}: {e}")
+
+    @tasks.loop(hours=1) # Check every hour for the right time
+    async def weekly_reset_task(self):
+        # --- Configuration (Replace with actual IDs/settings) ---
+        target_guild_id = 934160898828931143 # Replace with your Server ID
+        announcement_channel_id = 934181022659129444 # Replace with your announcement Channel ID
+        current_hog_role_name = "Current HOG DADDY" # Tracks the current leader
+        past_hog_role_name = "HOG DADDY"           # Awarded to the weekly winner
+        # --- End Configuration ---
+
+        now_et = datetime.now(self.ET_TIMEZONE)
+        # Check if it's Sunday (weekday 6) and midnight hour (0)
+        # Run slightly after midnight to avoid race conditions with the exact turn
+        if now_et.weekday() == 6 and now_et.hour == 0 and now_et.minute < 5: # Run in the first 5 mins of Sunday
+            # Add a small random delay to prevent multiple instances hitting DB at once if scaled
+            await asyncio.sleep(random.uniform(1, 10))
+            print("[Weekly Reset] Triggered Sunday Midnight Reset.")
+            guild = self.bot.get_guild(target_guild_id)
+            channel = self.bot.get_channel(announcement_channel_id)
+
+            if not guild:
+                print(f"[Weekly Reset] Error: Guild {target_guild_id} not found.")
+                return
+            if not channel:
+                print(f"[Weekly Reset] Error: Channel {announcement_channel_id} not found.")
+                # Optionally try to find a default channel in the guild
+                channel = guild.system_channel or next((ch for ch in guild.text_channels if ch.permissions_for(guild.me).send_messages), None)
+                if channel:
+                    print(f"[Weekly Reset] Using fallback channel: {channel.name}")
+                else:
+                     print(f"[Weekly Reset] Error: No suitable announcement channel found in guild {guild.name}.")
+                     return # Cannot proceed without channel
+
+            db = await self._get_db()
+            async with db.acquire() as conn:
+                # Use a transaction to ensure atomicity
+                async with conn.transaction():
+                    # Find winner
+                    winner_record = await conn.fetchrow(
+                        "SELECT user_id, size FROM pp_sizes ORDER BY size DESC, last_used ASC LIMIT 1"
+                    )
+
+                    winner_member = None
+                    winner_mention = "No one"
+                    winner_size = 0
+
+                    if winner_record:
+                        winner_user_id = winner_record['user_id']
+                        winner_size = winner_record['size']
+                        winner_member = guild.get_member(winner_user_id)
+                        if winner_member:
+                             winner_mention = winner_member.mention
+                        else:
+                            # Try fetching if not cached
+                            try:
+                               winner_user = await self.bot.fetch_user(winner_user_id)
+                               winner_mention = winner_user.mention + " (user not currently in server)"
+                            except discord.NotFound:
+                               winner_mention = f"User ID {winner_user_id} (user not found)"
+                            except Exception as e:
+                               winner_mention = f"User ID {winner_user_id} (error fetching: {e})"
+
+
+                        # Announce winner
+                        await channel.send(f"🎉 **Weekly PP Winner!** 🎉\nCongratulations to {winner_mention} for having the biggest PP this week with **{winner_size} inches**! They are the new **{past_hog_role_name}**!")
+
+                        # --- Role Handling --- 
+                        current_role = discord.utils.get(guild.roles, name=current_hog_role_name)
+                        past_role = discord.utils.get(guild.roles, name=past_hog_role_name)
+
+                        # 1. Remove 'Current HOG DADDY' from winner (if they have it)
+                        if current_role and winner_member and current_role in winner_member.roles:
+                            try:
+                                await winner_member.remove_roles(current_role, reason="Weekly Reset - Won week")
+                                print(f"[Weekly Reset] Removed '{current_hog_role_name}' from {winner_member.name}")
+                            except Exception as e:
+                                 print(f"⚠️ [Weekly Reset] Failed to remove role '{current_role.name}' from {winner_member.name}: {e}")
+                        elif not current_role:
+                             print(f"⚠️ [Weekly Reset] Role '{current_hog_role_name}' not found for removal.")
+
+                        # 2. Handle 'HOG DADDY' role
+                        if past_role:
+                            previous_winner = None
+                            # Find previous winner by checking who has the role
+                            for member in guild.members:
+                                if past_role in member.roles:
+                                    previous_winner = member
+                                    print(f"[Weekly Reset] Found previous '{past_hog_role_name}': {previous_winner.name}")
+                                    break
+                            
+                            # Remove from previous winner (if different from new winner)
+                            if previous_winner and previous_winner.id != winner_member.id:
                                 try:
-                                    await member.remove_roles(role)
-                                except discord.Forbidden:
-                                    print(f"⚠️ Bot lacks permissions to remove role '{role.name}' from {member.name}")
-                                except discord.HTTPException as e:
-                                    print(f"⚠️ Failed to remove role '{role.name}' from {member.name}: {e}")
+                                    await previous_winner.remove_roles(past_role, reason=f"New {past_hog_role_name}: {winner_member.name if winner_member else 'N/A'}")
+                                    print(f"[Weekly Reset] Removed '{past_hog_role_name}' from previous winner {previous_winner.name}")
+                                except Exception as e:
+                                    print(f"⚠️ [Weekly Reset] Failed to remove role '{past_role.name}' from previous winner {previous_winner.name}: {e}")
 
-                        # Assign the role to the new biggest PP holder
-                        try:
-                            await biggest_member.add_roles(role)
-                            print(f"🏆 {biggest_member.name} now holds 'Current HOG DADDY'!")
-                        except discord.Forbidden:
-                            print(f"⚠️ Bot lacks permissions to add role '{role.name}' to {biggest_member.name}")
-                        except discord.HTTPException as e:
-                            print(f"⚠️ Failed to add role '{role.name}' to {biggest_member.name}: {e}")
+                            # Add to the new winner (if they are in the server)
+                            if winner_member and past_role not in winner_member.roles:
+                                try:
+                                    await winner_member.add_roles(past_role, reason="Weekly PP Winner")
+                                    print(f"[Weekly Reset] Awarded '{past_hog_role_name}' to {winner_member.name}")
+                                except Exception as e:
+                                    print(f"⚠️ [Weekly Reset] Failed to add role '{past_role.name}' to {winner_member.name}: {e}")
+                            elif winner_member and past_role in winner_member.roles:
+                                print(f"[Weekly Reset] Winner {winner_member.name} already has the '{past_hog_role_name}' role.")
+                                
+                        else:
+                             print(f"⚠️ [Weekly Reset] Role '{past_hog_role_name}' not found in the server.")
+                        # --- End Role Handling ---
+
+                    else:
+                        await channel.send("🏆 The week has ended, but no one rolled their PP! Leaderboard reset. No new HOG DADDY assigned.")
+{{ ... }}
+            else:
+                 print("[Weekly Reset] Woke up, but not the right time yet. Recalculating sleep.")
+                 # Loop continues to recalculate sleep
+
 
 async def setup(bot):
-    await bot.add_cog(PPCore(bot))
-    print("✅ PPCore Cog loaded")
+{{ ... }}
