@@ -19,8 +19,9 @@ class Utility(commands.Cog):
 
         # PP Core
         embed.add_field(
-            name="📏 PP Core", 
-            value=f"`{prefix}pp [@user]` - Roll for your (or someone else's) PP size.\n"
+            name="📏 PP Core & Profile", 
+            value=f"`{prefix}pp` - Roll for your PP size (resets top of the hour, highest daily wins Hog Daddy!).\n"
+                  f"`{prefix}profile [@user]` - Show your (or someone else's) PP profile, stats, and achievements.\n"
                   f"`{prefix}leaderboard [global]` - Show the server (or global) PP leaderboard.", 
             inline=False
         )
