@@ -335,12 +335,29 @@ class PPCore(commands.Cog):
         
         now = datetime.now(timezone.utc) # Use timezone aware datetime
         if last_roll_ts:
-            # Ensure last_roll_ts is timezone aware if fetched from TIMESTAMPTZ
-            # asyncpg handles this automatically if the column type is correct
-            time_since_last = now - last_roll_ts
-            if time_since_last < timedelta(hours=1):
-                retry_after = timedelta(hours=1) - time_since_last
-                await ctx.send(f"⏳ Woah there, buddy! You gotta wait {int(retry_after.total_seconds() // 60)} more minutes to measure again.")
+            # Check if the last roll was within the current calendar hour
+            if (now.year == last_roll_ts.year and
+                now.month == last_roll_ts.month and
+                now.day == last_roll_ts.day and
+                now.hour == last_roll_ts.hour):
+                
+                # Calculate time until the next hour begins
+                next_hour = (now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1))
+                retry_after = next_hour - now
+                
+                # Format the remaining time nicely
+                minutes_left = int(retry_after.total_seconds() // 60)
+                seconds_left = int(retry_after.total_seconds() % 60)
+                
+                wait_message = ""
+                if minutes_left > 0:
+                    wait_message += f"{minutes_left} minute{'s' if minutes_left > 1 else ''}"
+                if seconds_left > 0:
+                    if minutes_left > 0:
+                        wait_message += " and "
+                    wait_message += f"{seconds_left} second{'s' if seconds_left > 1 else ''}"
+                    
+                await ctx.send(f"⏳ Woah there, buddy! You gotta wait {wait_message} to measure again (until the top of the hour).")
                 return
 
         base_size = random.choices(list(range(21)), weights=[1, 2, 3, 5, 7, 10, 15, 18, 20, 25, 30, 30, 25, 20, 15, 10, 7, 5, 3, 2, 1], k=1)[0]
