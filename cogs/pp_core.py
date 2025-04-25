@@ -1,515 +1,406 @@
 import discord
 from discord.ext import tasks, commands
-from discord import ui
+import asyncpg
 import random
-from datetime import datetime, timezone, timedelta
+import os
+from datetime import datetime, timedelta, time, timezone
 import pytz
-import asyncio
 
-class LeaderboardView(ui.View):
-    def __init__(self, bot, interaction_user, all_users, per_page=5):
-        super().__init__(timeout=180) # View times out after 3 minutes
-        self.bot = bot
-        self.interaction_user = interaction_user # Store who initiated the command
-        self.all_users = all_users
-        self.per_page = per_page
-        self.current_page = 0
-        self.total_pages = (len(self.all_users) - 1) // self.per_page # Calculate total pages
+# --- Constants ---
+DAILY_HOG_DADDY_ROLE_NAME = "Daily Hog Daddy"
+DAILY_RESET_HOUR_UTC = 0 # Midnight UTC
+ANNOUNCEMENT_CHANNEL_ID = 934181022659129444 # Channel for reset announcements & achievement fallback
+# --- End Constants ---
 
-        # Initial button states
-        self.update_buttons()
+class LeaderboardView(discord.ui.View):
+    def __init__(self, data, title="PP Leaderboard (Overall Top Rolls)", sep=10):
+        super().__init__(timeout=180) # 3 minute timeout
+        self.data = data
+        self.total_pages = (len(data) + sep - 1) // sep
+        self.sep = sep
+        self.title = title
+        self._update_buttons()
 
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # Only allow the user who initiated the command to interact
-        if interaction.user != self.interaction_user:
-            await interaction.response.send_message("Only the person who used the command can change pages.", ephemeral=True)
-            return False
-        return True
+    def _update_buttons(self):
+        self.children[0].disabled = self.current_page <= 1 # First page button
+        self.children[1].disabled = self.current_page <= 1 # Previous page button
+        self.children[3].disabled = self.current_page >= self.total_pages # Next page button
+        self.children[4].disabled = self.current_page >= self.total_pages # Last page button
+        # Update label for page number button
+        page_button = next((item for item in self.children if isinstance(item, discord.ui.Button) and item.custom_id == "page_indicator"), None)
+        if page_button:
+            page_button.label = f"Page {self.current_page}/{self.total_pages}"
 
-    def update_buttons(self):
-        # Disable/enable buttons based on current page
-        self.children[0].disabled = self.current_page == 0 # Disable previous on first page
-        self.children[1].disabled = self.current_page == self.total_pages # Disable next on last page
+    async def show_page(self, interaction: discord.Interaction):
+        start = (self.current_page - 1) * self.sep
+        end = start + self.sep
+        page_data = self.data[start:end]
+        embed = await self.create_leaderboard_embed(page_data, interaction.guild)
+        self._update_buttons()
+        await interaction.response.edit_message(embed=embed, view=self)
 
-    async def create_leaderboard_embed(self, page_num):
-        embed = discord.Embed(title=f" PP Leaderboard - Page {page_num + 1}/{self.total_pages + 1}", color=discord.Color.purple())
-        start_index = page_num * self.per_page
-        end_index = start_index + self.per_page
-        page_users = self.all_users[start_index:end_index]
-
-        if not page_users:
-             embed.description = "No users found on this page."
-             return embed
-
-        for rank, record in enumerate(page_users, start=start_index + 1):
-            user_id, size = record["user_id"], record["size"]
-            user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
-            username = user.name if user else f"Unknown User ({user_id})"
-            embed.add_field(
-                name=f"#{rank}: {username}", 
-                value=f"Size: 8{'=' * size}D (**{size} inches**)", 
-                inline=False
-            )
+    async def create_leaderboard_embed(self, page_data, guild):
+        embed = discord.Embed(title=self.title, color=discord.Color.blue())
+        description = ""
+        start_rank = (self.current_page - 1) * self.sep + 1
+        for i, record in enumerate(page_data):
+            rank = start_rank + i
+            user = guild.get_member(record['user_id']) or f"User ID: {record['user_id']}"
+            user_mention = user.mention if isinstance(user, discord.Member) else user
+            description += f"{rank}. {user_mention} - {record['size']} inches\n"
+        embed.description = description or "No users found."
+        embed.set_footer(text=f"Page {self.current_page}/{self.total_pages}")
         return embed
 
-    @ui.button(label="◀ Previous", style=discord.ButtonStyle.grey)
-    async def previous_button(self, interaction: discord.Interaction, button: ui.Button):
-        if self.current_page > 0:
-            self.current_page -= 1
-            self.update_buttons()
-            new_embed = await self.create_leaderboard_embed(self.current_page)
-            await interaction.response.edit_message(embed=new_embed, view=self)
+    @discord.ui.button(label="<<", style=discord.ButtonStyle.grey, custom_id="first_page", row=0)
+    async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = 1
+        await self.show_page(interaction)
 
-    @ui.button(label="Next ▶", style=discord.ButtonStyle.grey)
-    async def next_button(self, interaction: discord.Interaction, button: ui.Button):
-        if self.current_page < self.total_pages:
-            self.current_page += 1
-            self.update_buttons()
-            new_embed = await self.create_leaderboard_embed(self.current_page)
-            await interaction.response.edit_message(embed=new_embed, view=self)
+    @discord.ui.button(label="<", style=discord.ButtonStyle.blurple, custom_id="prev_page", row=0)
+    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page -= 1
+        await self.show_page(interaction)
+
+    @discord.ui.button(label="Page 1/1", style=discord.ButtonStyle.grey, disabled=True, custom_id="page_indicator", row=0)
+    async def page_indicator(self, interaction: discord.Interaction, button: discord.ui.Button):
+        pass # This button is just a label
+
+    @discord.ui.button(label=">", style=discord.ButtonStyle.blurple, custom_id="next_page", row=0)
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page += 1
+        await self.show_page(interaction)
+
+    @discord.ui.button(label=">>", style=discord.ButtonStyle.grey, custom_id="last_page", row=0)
+    async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = self.total_pages
+        await self.show_page(interaction)
 
 
 class PPCore(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.ET_TIMEZONE = pytz.timezone("America/New_York")
-        self.weekly_reset_task.start() # Start the task loop
+        self.db_pool = None
+        self.current_daily_hog_daddy_id = None
+        self.daily_hog_daddy_role_id = None 
 
-    def cog_unload(self):
-        self.weekly_reset_task.cancel() # Stop the task when the cog unloads
+    async def cog_load(self):
+        print("Attempting to connect to the database...")
+        try:
+            self.db_pool = await asyncpg.create_pool(dsn=os.getenv('DATABASE_URL'))
+            print("✅ Database pool created successfully.")
+            await self._get_hog_daddy_role(self.bot.guilds[0]) 
+            await self._initialize_daily_hog_daddy() # Fetch today's leader
+            self.daily_reset_task.start()
+            print("✅ Daily reset task started.")
+        except Exception as e:
+            print(f"❌ Failed to connect to database or start tasks: {e}")
+
+    async def cog_unload(self):
+        self.daily_reset_task.cancel()
+        if self.db_pool:
+            await self.db_pool.close()
+            print("Database pool closed.")
 
     async def _get_db(self):
-        """Get database pool from PPDB cog"""
-        db_cog = self.bot.get_cog('PPDB')
-        if not db_cog:
-            raise RuntimeError("PPDB cog not loaded!")
-        return await db_cog.get_db()
+        if not self.db_pool:
+            raise ConnectionError("Database pool is not initialized.")
+        return self.db_pool
 
-    @commands.command()
-    @commands.guild_only()
+    async def _initialize_daily_hog_daddy(self):
+        """Fetches the current daily hog daddy on startup."""
+        print("Initializing Daily Hog Daddy...")
+        db = await self._get_db()
+        async with db.acquire() as conn:
+            start_of_day_utc = datetime.now(pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # Find today's highest roller so far
+            record = await conn.fetchrow("""
+                SELECT user_id, size FROM pp_sizes
+                WHERE last_roll_timestamp >= $1
+                ORDER BY size DESC, last_roll_timestamp ASC
+                LIMIT 1
+            """, start_of_day_utc)
+
+            if record:
+                self.current_daily_hog_daddy_id = record['user_id']
+                print(f"Initialized Daily Hog Daddy to User ID: {self.current_daily_hog_daddy_id} (Score: {record['size']})")
+            else:
+                self.current_daily_hog_daddy_id = None
+                print("No Daily Hog Daddy found for today yet.")
+
+    async def _get_hog_daddy_role(self, guild: discord.Guild) -> discord.Role | None:
+        """Gets the Daily Hog Daddy role object, caching the ID."""
+        if self.daily_hog_daddy_role_id:
+            role = guild.get_role(self.daily_hog_daddy_role_id)
+            if role:
+                return role
+            else: # ID was cached but role deleted/not found
+                self.daily_hog_daddy_role_id = None 
+        
+        # Find role by name if ID not cached or role missing
+        role = discord.utils.get(guild.roles, name=DAILY_HOG_DADDY_ROLE_NAME)
+        if role:
+            self.daily_hog_daddy_role_id = role.id # Cache the ID
+            print(f"Found Daily Hog Daddy role: {role.name} (ID: {role.id})")
+            return role
+        else:
+            print(f"Warning: Role '{DAILY_HOG_DADDY_ROLE_NAME}' not found in guild '{guild.name}'.")
+            return None
+
+    async def _update_daily_hog_daddy(self, ctx: commands.Context, user: discord.Member, new_size: int):
+        """Checks if the new roll is the highest today and updates the role."""
+        guild = ctx.guild
+        if not guild:
+            return # Should not happen in guild commands
+
+        db = await self._get_db()
+        async with db.acquire() as conn:
+            start_of_day_utc = datetime.now(pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # Get current highest roll today
+            current_highest = await conn.fetchrow("""
+                SELECT user_id, size FROM pp_sizes
+                WHERE last_roll_timestamp >= $1
+                ORDER BY size DESC, last_roll_timestamp ASC
+                LIMIT 1
+            """, start_of_day_utc)
+
+        # Determine if this user is the new highest today
+        is_new_highest = False
+        if not current_highest: # No rolls today yet
+            is_new_highest = True
+        elif new_size > current_highest['size']: # Higher score
+            is_new_highest = True
+        elif new_size == current_highest['size'] and current_highest['user_id'] == user.id: # Same user, same highest score
+            # No change needed unless role somehow got removed
+            pass
+        # If new_size == current_highest['size'] but different user, the earlier roll wins for the day.
+
+        if is_new_highest:
+            print(f"New Daily Hog Daddy potential: {user.name} ({user.id}) with {new_size} inches.")
+            hog_role = await self._get_hog_daddy_role(guild)
+            if not hog_role:
+                print("Cannot update role, Daily Hog Daddy role not found.")
+                return
+
+            previous_hog_id = self.current_daily_hog_daddy_id
+            self.current_daily_hog_daddy_id = user.id # Update internal tracker
+
+            # Remove role from previous holder (if different)
+            if previous_hog_id and previous_hog_id != user.id:
+                previous_member = guild.get_member(previous_hog_id)
+                if previous_member and hog_role in previous_member.roles:
+                    try:
+                        await previous_member.remove_roles(hog_role, reason="No longer Daily Hog Daddy")
+                        print(f"Removed '{hog_role.name}' from {previous_member.name}")
+                    except discord.Forbidden:
+                        print(f"Bot lacks permission to remove role from {previous_member.name}.")
+                    except discord.HTTPException as e:
+                        print(f"Failed to remove role from {previous_member.name}: {e}")
+
+            # Add role to new holder (if they don't have it)
+            if hog_role not in user.roles:
+                try:
+                    await user.add_roles(hog_role, reason="New Daily Hog Daddy")
+                    print(f"Added '{hog_role.name}' to {user.name}")
+                    await ctx.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! 👑")
+                except discord.Forbidden:
+                    print(f"Bot lacks permission to add role to {user.name}.")
+                    await ctx.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! (But I couldn't assign the role.)")
+                except discord.HTTPException as e:
+                    print(f"Failed to add role to {user.name}: {e}")
+                    await ctx.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! (But there was an error assigning the role.)")
+
+    @tasks.loop(time=time(hour=DAILY_RESET_HOUR_UTC, minute=1, tzinfo=pytz.utc)) # Run daily at 00:01 UTC
+    async def daily_reset_task(self):
+        """Calculates previous day's winner, updates stats, grants achievement, announces, and clears role."""
+        print(f"--- Running Daily Hog Daddy Reset Task ({datetime.now(pytz.utc)}) ---")
+        now_utc = datetime.now(pytz.utc)
+        end_of_yesterday = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_yesterday = end_of_yesterday - timedelta(days=1)
+
+        print(f"Checking for winner between {start_of_yesterday} and {end_of_yesterday}")
+
+        db = await self._get_db()
+        profile_cog = self.bot.get_cog('PPProfile')
+        guild = self.bot.guilds[0] if self.bot.guilds else None # Assume bot is in one guild for simplicity
+        if not guild:
+            print("Reset Task Error: Bot is not in any guilds?")
+            return
+        
+        hog_role = await self._get_hog_daddy_role(guild)
+        if not hog_role:
+            print("Reset Task Error: Daily Hog Daddy role not found.")
+            # Continue without role logic? Or stop? Let's continue for stats/achievements.
+
+        async with db.acquire() as conn:
+            # Find yesterday's winner (highest score, earliest timestamp wins ties)
+            winner_record = await conn.fetchrow("""
+                SELECT user_id, MAX(size) as max_size
+                FROM pp_sizes
+                WHERE last_roll_timestamp >= $1 AND last_roll_timestamp < $2
+                GROUP BY user_id
+                ORDER BY max_size DESC, MIN(last_roll_timestamp) ASC
+                LIMIT 1
+            """, start_of_yesterday, end_of_yesterday)
+
+            yesterdays_winner_member = None
+            if winner_record:
+                winner_id = winner_record['user_id']
+                winner_size = winner_record['max_size']
+                print(f"Yesterday's winner found: User ID {winner_id} with score {winner_size}")
+                
+                yesterdays_winner_member = guild.get_member(winner_id)
+                winner_mention = f"<@{winner_id}>" 
+                if yesterdays_winner_member:
+                    winner_mention = yesterdays_winner_member.mention
+
+                async with conn.transaction():
+                    # Update stats
+                    await conn.execute("""
+                        INSERT INTO user_stats (user_id, days_as_hog_daddy)
+                        VALUES ($1, 1)
+                        ON CONFLICT (user_id) DO UPDATE SET
+                            days_as_hog_daddy = user_stats.days_as_hog_daddy + 1
+                    """, winner_id)
+                    print(f"Incremented days_as_hog_daddy for {winner_id}")
+
+                    # Grant achievement if needed
+                    if profile_cog:
+                        # We need a context-like object or channel to send the achievement message
+                        # Let's try sending to a default channel (replace with your channel ID)
+                        log_channel_id = ANNOUNCEMENT_CHANNEL_ID # Replace with your actual log/announcement channel ID
+                        log_channel = self.bot.get_channel(log_channel_id)
+                        
+                        if log_channel:
+                           await profile_cog._grant_achievement_no_ctx(winner_id, 'became_hog_daddy', log_channel) 
+                        else:
+                            print(f"Cannot grant achievement, log channel {log_channel_id} not found.")
+
+                # Announce yesterday's winner
+                announcement_channel = guild.system_channel or log_channel # Use system channel or fallback
+                if announcement_channel:
+                    try:
+                        await announcement_channel.send(f"🏆 Congratulations to {winner_mention} for being yesterday's **Hog Daddy** with a top roll of **{winner_size} inches**! They have held the title {await conn.fetchval('SELECT days_as_hog_daddy FROM user_stats WHERE user_id = $1', winner_id)} times! 🏆")
+                    except discord.Forbidden:
+                         print(f"Failed to send announcement to {announcement_channel.name}: Missing permissions.")
+                else:
+                    print("Failed to send announcement: No suitable channel found.")
+
+                # --- End of DB transaction ---
+
+            else:
+                print("No winner found for yesterday.")
+
+            # Clear role from the user who held it at midnight (might be yesterday's winner or someone else if roles weren't updated perfectly)
+            current_holder_id = self.current_daily_hog_daddy_id # Who held it at the end of the day
+            if current_holder_id and hog_role:
+                member_to_clear = guild.get_member(current_holder_id)
+                if member_to_clear and hog_role in member_to_clear.roles:
+                    try:
+                        await member_to_clear.remove_roles(hog_role, reason="Daily reset")
+                        print(f"Cleared Daily Hog Daddy role from {member_to_clear.name} for reset.")
+                    except discord.Forbidden:
+                         print(f"Failed to clear role from {member_to_clear.name}: Missing permissions.")
+                    except discord.HTTPException as e:
+                        print(f"Failed to clear role from {member_to_clear.name}: {e}")
+                elif not member_to_clear:
+                     print(f"Could not find member {current_holder_id} to clear role.")
+
+            # Reset internal tracker for the new day
+            self.current_daily_hog_daddy_id = None
+            print("Daily Hog Daddy ID reset for the new day.")
+            print("--- Daily Reset Task Finished ---")
+
+    @daily_reset_task.before_loop
+    async def before_daily_reset_task(self):
+        print('Waiting for bot to be ready before starting daily reset task...')
+        await self.bot.wait_until_ready()
+        print('Bot ready, daily reset task loop starting.')
+
+    @commands.command(name='pp', help='Calculates your pp size (once per hour)')
     async def pp(self, ctx):
-        """Generate a random PP size, usable once per clock hour."""
-        print(f" {ctx.author} triggered 'pls pp'")
-
         user = ctx.author
         user_id = user.id
-        now_utc = datetime.now(timezone.utc)
-
-        # Get database pool
         db = await self._get_db()
+        profile_cog = self.bot.get_cog('PPProfile')
 
-        # Get event cog for active effects
-        event_cog = self.bot.get_cog('PPEvents')
-        minigames_cog = self.bot.get_cog('PPMinigames')
-        profile_cog = self.bot.get_cog('PPProfile') # <-- Get the profile cog
+        # Check cooldown using last_roll_timestamp
+        async with db.acquire() as conn:
+            last_roll_ts = await conn.fetchval(
+                "SELECT last_roll_timestamp FROM pp_sizes WHERE user_id = $1",
+                user_id
+            )
+        
+        now = datetime.now(timezone.utc) # Use timezone aware datetime
+        if last_roll_ts:
+            # Ensure last_roll_ts is timezone aware if fetched from TIMESTAMPTZ
+            # asyncpg handles this automatically if the column type is correct
+            time_since_last = now - last_roll_ts
+            if time_since_last < timedelta(hours=1):
+                retry_after = timedelta(hours=1) - time_since_last
+                await ctx.send(f"⏳ Woah there, buddy! You gotta wait {int(retry_after.total_seconds() // 60)} more minutes to measure again.")
+                return
 
-        try:
-            async with db.acquire() as conn:
-                # Check PP Off status if minigames cog is loaded
-                is_pp_off_active_here = False
-                if minigames_cog and minigames_cog.is_pp_off_active(ctx.channel.id):
-                    is_pp_off_active_here = True
-                    print(f"[DEBUG pp] PP Off active in this channel, bypassing time check for {ctx.author.name}")
-                else:
-                    # Check if user has used pp command this hour
-                    last_used = await conn.fetchval(
-                        "SELECT last_used FROM pp_sizes WHERE user_id = $1",
-                        user_id
-                    )
-                    
-                    if last_used:
-                        last_used = last_used.replace(tzinfo=timezone.utc)  # Make timezone-aware
-                        # Check if last use was in the current hour
-                        if (last_used.year == now_utc.year and 
-                            last_used.month == now_utc.month and 
-                            last_used.day == now_utc.day and 
-                            last_used.hour == now_utc.hour):
-                            # Calculate time until next hour
-                            next_hour = now_utc.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-                            minutes, seconds = divmod((next_hour - now_utc).total_seconds(), 60)
-                            await ctx.send(
-                                f"{user.mention}, you've already rolled this hour! "
-                                f"Try again in **{int(minutes)}m {int(seconds)}s** (at {discord.utils.format_dt(next_hour, style='t')})"
-                            )
-                            return
-
-                # Clear expired effects
-                await conn.execute("DELETE FROM user_active_effects WHERE end_time <= NOW()")
-
-                # Get active effects
-                active_boost = await conn.fetchrow("""
-                    SELECT * FROM user_active_effects 
-                    WHERE user_id = $1 AND effect_type = 'pp_boost' AND end_time > NOW()
-                """, user_id)
-                reroll_available = await conn.fetchrow("""
-                    SELECT * FROM user_active_effects 
-                    WHERE user_id = $1 AND effect_type = 'reroll_available' AND end_time > NOW()
-                """, user_id)
-
-                # Define possible PP sizes and their weights
-                sizes = list(range(21))
-                weights = [
-                    1,  2,  3,  5,  7,  10,  15,  18,  20,  25,  # 0-9
-                    30, 30, 25, 20, 15, 10,  7,   5,   3,   2,   # 10-19
-                    1   # 20
-                ]
-
-                # Initial Roll & Effect Application
-                initial_roll = random.choices(sizes, weights=weights, k=1)[0]
-                final_size = initial_roll
-                event_modifier = 0
-                item_modifier = 0
-                applied_effects_msg = []
-
-                # Apply server event effect if events cog is loaded
-                if event_cog:
-                    event_effect = event_cog.get_current_event_effect()
-                    if event_effect:
-                        event_modifier = event_effect['effect']
-                        applied_effects_msg.append(f"{'+' if event_modifier > 0 else ''}{event_modifier} from {event_effect['name']}")
-
-                # Apply item boost effect
-                if active_boost:
-                    item_modifier = active_boost['effect_value']
-                    applied_effects_msg.append(f"{'+' if item_modifier > 0 else ''}{item_modifier} from pp_boost")
-
-                # Calculate size after effects
-                final_size += (event_modifier + item_modifier)
-                final_size = max(0, min(20, final_size))
-
-                # Reroll Logic
-                performed_reroll = False
-                if reroll_available:
-                    initial_message = f"{user.mention}, your initial roll is **{final_size} inches**."
-                    if applied_effects_msg:
-                        initial_message += f" (Effects: {', '.join(applied_effects_msg)})"
-                    initial_message += "\nYou have a **Reroll Token**! Would you like to reroll? Respond `yes` or `no` within 30 seconds."
-                    
-                    sent_msg = await ctx.send(initial_message)
-
-                    def check(m):
-                        return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() in ['yes', 'no']
-
-                    try:
-                        response_msg = await self.bot.wait_for('message', timeout=30.0, check=check)
-                        
-                        # Consume the reroll token regardless of answer
-                        await conn.execute("DELETE FROM user_active_effects WHERE user_id = $1 AND effect_type = 'reroll_available'", user_id)
-
-                        if response_msg.content.lower() == 'yes':
-                            performed_reroll = True
-                            initial_roll = random.choices(sizes, weights=weights, k=1)[0]
-                            final_size = initial_roll + event_modifier + item_modifier
-                            final_size = max(0, min(20, final_size))
-                            await ctx.send(f"{user.mention}, rerolling... Your new size is **{final_size} inches**!")
-                        else:
-                            await ctx.send(f"{user.mention}, okay, keeping the original roll of **{final_size} inches**.")
-
-                    except asyncio.TimeoutError:
-                        await conn.execute("DELETE FROM user_active_effects WHERE user_id = $1 AND effect_type = 'reroll_available'", user_id)
-                        await ctx.send(f"{user.mention}, timed out. Keeping the original roll of **{final_size} inches**. Your Reroll Token was consumed.")
-
-                # Update Database
-                # 1. Update pp_sizes table (handles current size and last used time)
-                await conn.execute(
-                    "INSERT INTO pp_sizes (user_id, size, last_used) VALUES ($1, $2, $3) "
-                    "ON CONFLICT(user_id) DO UPDATE SET size = EXCLUDED.size, last_used = EXCLUDED.last_used",
-                    user_id, final_size, now_utc
-                )
-
-                # 2. Update user_stats table
+        base_size = random.choices(list(range(21)), weights=[1, 2, 3, 5, 7, 10, 15, 18, 20, 25, 30, 30, 25, 20, 15, 10, 7, 5, 3, 2, 1], k=1)[0]
+        final_size = base_size # Apply effects later if needed
+        final_size = max(0, min(20, final_size)) # Clamp result
+        
+        # Update database (pp_sizes and user_stats)
+        async with db.acquire() as conn:
+            async with conn.transaction():
+                # Update pp_sizes with new size and timestamp
                 await conn.execute("""
-                    INSERT INTO user_stats (user_id, total_rolls, zero_rolls, twenty_rolls) 
-                    VALUES ($1, 1, CASE WHEN $2 = 0 THEN 1 ELSE 0 END, CASE WHEN $2 = 20 THEN 1 ELSE 0 END)
+                    INSERT INTO pp_sizes (user_id, size, last_roll_timestamp)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (user_id)
+                    DO UPDATE SET size = $2, last_roll_timestamp = $3
+                """, user_id, final_size, now)
+
+                zero_increment = 1 if final_size == 0 else 0
+                twenty_increment = 1 if final_size == 20 else 0
+                stats = await conn.fetchrow(""" 
+                    INSERT INTO user_stats (user_id, total_rolls, zero_rolls, twenty_rolls)
+                    VALUES ($1, 1, $2, $3)
                     ON CONFLICT (user_id) DO UPDATE SET
                         total_rolls = user_stats.total_rolls + 1,
-                        zero_rolls = user_stats.zero_rolls + CASE WHEN $2 = 0 THEN 1 ELSE 0 END,
-                        twenty_rolls = user_stats.twenty_rolls + CASE WHEN $2 = 20 THEN 1 ELSE 0 END
-                    """, user_id, final_size)
-                print(f"[Stats] Updated roll stats for {user.name} (size: {final_size})")
+                        zero_rolls = user_stats.zero_rolls + $2,
+                        twenty_rolls = user_stats.twenty_rolls + $3
+                    RETURNING zero_rolls, twenty_rolls
+                """, user_id, zero_increment, twenty_increment)
 
-                # Send final message if no reroll prompt occurred
-                if not reroll_available:
-                    message = f"{user.mention}'s new pp size: 8{'=' * final_size}D! (**{final_size} inches**)"
-                    if applied_effects_msg:
-                        message += f" (Effects: {', '.join(applied_effects_msg)})"
-                    await ctx.send(message)
+        if profile_cog:
+            if final_size == 0 and stats and stats['zero_rolls'] == 1:
+                await profile_cog._grant_achievement(user, 'roll_a_zero', ctx)
+            elif final_size == 20 and stats and stats['twenty_rolls'] == 1:
+                await profile_cog._grant_achievement(user, 'roll_a_twenty', ctx)
 
-                # Update roles
-                await self.update_current_biggest(ctx.guild)
+        measurement = f"{final_size} inches"
+        await ctx.send(f"{user.mention}'s pp is {measurement}")
 
-                # Check for Achievements (only if profile cog is loaded)
-                if profile_cog:
-                    if final_size == 0:
-                         await profile_cog._grant_achievement(user, 'roll_a_zero', ctx) # Pass ctx
-                    elif final_size == 20:
-                         await profile_cog._grant_achievement(user, 'roll_a_twenty', ctx) # Pass ctx
+        if ctx.guild: # Ensure it's in a guild context
+            await self._update_daily_hog_daddy(ctx, user, final_size)
+        else:
+            print("Cannot update Daily Hog Daddy outside of a guild.")
 
-                # Record score if PP Off is active
-                if is_pp_off_active_here and minigames_cog:
-                    minigames_cog.record_pp_off_score(user_id, final_size)
-
-        except Exception as e:
-            print(f" Database/Command error in pls pp: {e}")
-            import traceback
-            traceback.print_exc()
-            await ctx.send(f" An error occurred processing your pp command. Please try again later.")
-
-    @commands.command()
+    @commands.command(name='leaderboard', aliases=['lb'], help='Shows the overall PP leaderboard')
     async def leaderboard(self, ctx):
-        """Displays the top PP sizes with pagination."""
-        print(f" {ctx.author} triggered 'pls leaderboard'")
-
         db = await self._get_db()
         async with db.acquire() as conn:
-            # Fetch ALL users sorted by size
-            all_users = await conn.fetch("SELECT user_id, size FROM pp_sizes ORDER BY size DESC")
+            top_users = await conn.fetch("""
+                SELECT user_id, size, last_roll_timestamp FROM pp_sizes 
+                ORDER BY size DESC, last_roll_timestamp ASC
+                LIMIT 100 -- Limit to a reasonable number for pagination
+            """)
 
-        if not all_users:
-            await ctx.send("No pp sizes recorded yet! Use `pls pp` to start.")
+        if not top_users:
+            await ctx.send("The leaderboard is empty!")
             return
 
-        # Create the view and the initial embed
-        view = LeaderboardView(self.bot, ctx.author, all_users)
-        initial_embed = await view.create_leaderboard_embed(0)
-
+        view = LeaderboardView(top_users, title="PP Leaderboard (Overall Top Rolls)", sep=10)
+        initial_embed = await view.create_leaderboard_embed(top_users[:10], ctx.guild)
         await ctx.send(embed=initial_embed, view=view)
-
-    async def update_current_biggest(self, guild):
-        """Assigns the 'Current HOG DADDY' role to the biggest PP holder"""
-        role_name = "Current HOG DADDY"
-        print(f"[Role Update] Starting update for '{role_name}' in guild '{guild.name}' ({guild.id})")
-        
-        db = await self._get_db()
-        async with db.acquire() as conn:
-            biggest = await conn.fetchrow("SELECT user_id, size FROM pp_sizes ORDER BY size DESC, last_used ASC LIMIT 1")
-
-            if not biggest:
-                print(f"[Role Update] No PP scores found in DB for guild {guild.name}. Cannot update role.")
-                # Optional: Remove role from anyone who might still have it if DB is empty?
-                return
-
-            biggest_user_id = biggest["user_id"]
-            biggest_size = biggest["size"]
-            print(f"[Role Update] Biggest PP user ID: {biggest_user_id} with size {biggest_size}")
-
-            role = discord.utils.get(guild.roles, name=role_name)
-            if not role:
-                print(f"⚠️ [Role Update] Role '{role_name}' not found in guild {guild.name}. Please ensure it exists.")
-                return
-
-            biggest_member = guild.get_member(biggest_user_id)
-            current_holder = None
-            for member in guild.members:
-                if role in member.roles:
-                    current_holder = member
-                    print(f"[Role Update] Found current role holder: {current_holder.name} ({current_holder.id})")
-                    break # Assuming only one holder
-
-            if biggest_member:
-                # Check if the biggest member is already the holder
-                if current_holder and current_holder.id == biggest_member.id:
-                    print(f"[Role Update] {biggest_member.name} already has the '{role_name}' role. No change needed.")
-                    return
-                
-                print(f"[Role Update] Attempting to set {biggest_member.name} as the new '{role_name}'.")
-                # Remove from previous holder if there was one
-                if current_holder:
-                    try:
-                        await current_holder.remove_roles(role, reason=f"New {role_name}: {biggest_member.name}")
-                        print(f"[Role Update] Successfully removed role from previous holder: {current_holder.name}")
-                    except discord.Forbidden:
-                        print(f"⚠️ [Role Update] Bot lacks permissions to remove role '{role.name}' from {current_holder.name}. Check role hierarchy and permissions.")
-                    except discord.HTTPException as e:
-                        print(f"⚠️ [Role Update] Failed to remove role '{role.name}' from {current_holder.name}: {e}")
-                    except Exception as e:
-                        print(f"⚠️ [Role Update] Unexpected error removing role from {current_holder.name}: {e}")
-                
-                # Add to the new biggest member
-                try:
-                    await biggest_member.add_roles(role, reason=f"Achieved biggest PP: {biggest_size} inches")
-                    print(f"[Role Update] Successfully assigned role to new holder: {biggest_member.name}")
-                except discord.Forbidden:
-                    print(f"⚠️ [Role Update] Bot lacks permissions to add role '{role.name}' to {biggest_member.name}. Check role hierarchy and permissions.")
-                except discord.HTTPException as e:
-                    print(f"⚠️ [Role Update] Failed to add role '{role.name}' to {biggest_member.name}: {e}")
-                except Exception as e:
-                    print(f"⚠️ [Role Update] Unexpected error adding role to {biggest_member.name}: {e}")
-
-            else: # Biggest user is not in the guild anymore
-                print(f"[Role Update] Biggest user ID {biggest_user_id} not found in guild {guild.name}. They may have left.")
-                if current_holder:
-                    print(f"[Role Update] Removing role from current holder {current_holder.name} as the top user left.")
-                    try:
-                        await current_holder.remove_roles(role, reason=f"{role_name} user left server")
-                        print(f"[Role Update] Successfully removed role from {current_holder.name} (top user left).")
-                    except discord.Forbidden:
-                        print(f"⚠️ [Role Update] Bot lacks permissions to remove role '{role.name}' from {current_holder.name}.")
-                    except discord.HTTPException as e:
-                        print(f"⚠️ [Role Update] Failed to remove role '{role.name}' from {current_holder.name}: {e}")
-                    except Exception as e:
-                        print(f"⚠️ [Role Update] Unexpected error removing role from {current_holder.name}: {e}")
-
-    @tasks.loop(hours=1) # Check every hour for the right time
-    async def weekly_reset_task(self):
-        # --- Configuration (Replace with actual IDs/settings) ---
-        target_guild_id = 934160898828931143 # Replace with your Server ID
-        announcement_channel_id = 934181022659129444 # Replace with your announcement Channel ID
-        current_hog_role_name = "Current HOG DADDY" # Tracks the current leader
-        past_hog_role_name = "HOG DADDY"           # Awarded to the weekly winner
-        # --- End Configuration ---
-
-        now_et = datetime.now(self.ET_TIMEZONE)
-        # Check if it's Sunday (weekday 6) and midnight hour (0)
-        # Run slightly after midnight to avoid race conditions with the exact turn
-        if now_et.weekday() == 6 and now_et.hour == 0 and now_et.minute < 5: # Run in the first 5 mins of Sunday
-            # Add a small random delay to prevent multiple instances hitting DB at once if scaled
-            await asyncio.sleep(random.uniform(1, 10))
-            print("[Weekly Reset] Triggered Sunday Midnight Reset.")
-            guild = self.bot.get_guild(target_guild_id)
-            channel = self.bot.get_channel(announcement_channel_id)
-
-            if not guild:
-                print(f"[Weekly Reset] Error: Guild {target_guild_id} not found.")
-                return
-            if not channel:
-                print(f"[Weekly Reset] Error: Channel {announcement_channel_id} not found.")
-                # Optionally try to find a default channel in the guild
-                channel = guild.system_channel or next((ch for ch in guild.text_channels if ch.permissions_for(guild.me).send_messages), None)
-                if channel:
-                    print(f"[Weekly Reset] Using fallback channel: {channel.name}")
-                else:
-                     print(f"[Weekly Reset] Error: No suitable announcement channel found in guild {guild.name}.")
-                     return # Cannot proceed without channel
-
-            db = await self._get_db()
-            async with db.acquire() as conn:
-                # Use a transaction to ensure atomicity
-                async with conn.transaction():
-                    # Find winner
-                    winner_record = await conn.fetchrow(
-                        "SELECT user_id, size FROM pp_sizes ORDER BY size DESC, last_used ASC LIMIT 1"
-                    )
-
-                    winner_member = None
-                    winner_mention = "No one"
-                    winner_size = 0
-
-                    if winner_record:
-                        winner_user_id = winner_record['user_id']
-                        winner_size = winner_record['size']
-                        winner_member = guild.get_member(winner_user_id)
-                        if winner_member:
-                             winner_mention = winner_member.mention
-                        else:
-                            # Try fetching if not cached
-                            try:
-                               winner_user = await self.bot.fetch_user(winner_user_id)
-                               winner_mention = winner_user.mention + " (user not currently in server)"
-                            except discord.NotFound:
-                               winner_mention = f"User ID {winner_user_id} (user not found)"
-                            except Exception as e:
-                               winner_mention = f"User ID {winner_user_id} (error fetching: {e})"
-
-
-                        # Announce winner
-                        await channel.send(f"🎉 **Weekly PP Winner!** 🎉\nCongratulations to {winner_mention} for having the biggest PP this week with **{winner_size} inches**! They are the new **{past_hog_role_name}**!")
-
-                        # --- Role Handling --- 
-                        current_role = discord.utils.get(guild.roles, name=current_hog_role_name)
-                        past_role = discord.utils.get(guild.roles, name=past_hog_role_name)
-
-                        # 1. Remove 'Current HOG DADDY' from winner (if they have it)
-                        if current_role and winner_member and current_role in winner_member.roles:
-                            try:
-                                await winner_member.remove_roles(current_role, reason="Weekly Reset - Won week")
-                                print(f"[Weekly Reset] Removed '{current_hog_role_name}' from {winner_member.name}")
-                            except Exception as e:
-                                 print(f"⚠️ [Weekly Reset] Failed to remove role '{current_role.name}' from {winner_member.name}: {e}")
-                        elif not current_role:
-                             print(f"⚠️ [Weekly Reset] Role '{current_hog_role_name}' not found for removal.")
-
-                        # 2. Handle 'HOG DADDY' role
-                        if past_role:
-                            previous_winner = None
-                            # Find previous winner by checking who has the role
-                            for member in guild.members:
-                                if past_role in member.roles:
-                                    previous_winner = member
-                                    print(f"[Weekly Reset] Found previous '{past_hog_role_name}': {previous_winner.name}")
-                                    break
-                            
-                            # Remove from previous winner (if different from new winner)
-                            if previous_winner and previous_winner.id != winner_member.id:
-                                try:
-                                    await previous_winner.remove_roles(past_role, reason=f"New {past_hog_role_name}: {winner_member.name if winner_member else 'N/A'}")
-                                    print(f"[Weekly Reset] Removed '{past_hog_role_name}' from previous winner {previous_winner.name}")
-                                except Exception as e:
-                                    print(f"⚠️ [Weekly Reset] Failed to remove role '{past_role.name}' from previous winner {previous_winner.name}: {e}")
-
-                            # Add to the new winner (if they are in the server)
-                            if winner_member and past_role not in winner_member.roles:
-                                try:
-                                    await winner_member.add_roles(past_role, reason="Weekly PP Winner")
-                                    print(f"[Weekly Reset] Awarded '{past_hog_role_name}' to {winner_member.name}")
-                                except Exception as e:
-                                    print(f"⚠️ [Weekly Reset] Failed to add role '{past_role.name}' to {winner_member.name}: {e}")
-                            elif winner_member and past_role in winner_member.roles:
-                                print(f"[Weekly Reset] Winner {winner_member.name} already has the '{past_hog_role_name}' role.")
-                                
-                        else:
-                             print(f"⚠️ [Weekly Reset] Role '{past_hog_role_name}' not found in the server.")
-                        # --- End Role Handling ---
-
-                    else:
-                        await channel.send("🏆 The week has ended, but no one rolled their PP! Leaderboard reset. No new HOG DADDY assigned.")
-                    
-                    # Clear the leaderboard regardless of whether there was a winner
-                    deleted_count_str = await conn.fetchval("DELETE FROM pp_sizes RETURNING count(*)") # Use fetchval for count
-                    deleted_count = int(deleted_count_str) if deleted_count_str else 0
-                    print(f"[Weekly Reset] Cleared {deleted_count} records from pp_sizes table.")
-                    await channel.send("🔄 The weekly PP leaderboard has been reset! Good luck next week!")
-            
-            # Prevent running multiple times within the hour if the check passes early
-            # Sleep until the next hour check. Important this is outside the transaction.
-            await asyncio.sleep(3600 - (now_et.minute*60 + now_et.second)) 
-
-    @weekly_reset_task.before_loop
-    async def before_weekly_reset_task(self):
-        await self.bot.wait_until_ready() # Wait for the bot to be ready before starting the loop
-        
-        while True: # Keep calculating sleep until the first run
-            # Calculate initial delay until the next Sunday midnight ET
-            now_et = datetime.now(self.ET_TIMEZONE)
-            # Calculate days until next Sunday (0=Mon, 6=Sun)
-            days_until_sunday = (6 - now_et.weekday() + 7) % 7 
-            # Target time is next Sunday at 00:00:05 ET (slight buffer)
-            next_sunday_midnight = (now_et + timedelta(days=days_until_sunday)).replace(hour=0, minute=0, second=5, microsecond=0)
-
-            # If it's Sunday but before 5 seconds past midnight, the target is today
-            # If it's Sunday *after* 5 seconds past midnight, aim for *next* Sunday
-            if now_et.weekday() == 6 and now_et >= next_sunday_midnight:
-                next_sunday_midnight += timedelta(days=7)
-            # If it's not Sunday, days_until_sunday ensures we aim for the upcoming Sunday
-                
-            wait_seconds = (next_sunday_midnight - now_et).total_seconds()
-
-            if wait_seconds <= 0: # Should not happen with the logic above, but safety check
-                 wait_seconds = 5 # Wait a few seconds and recalculate
-            
-            print(f"[Weekly Reset] Task started. Waiting {wait_seconds:.2f} seconds until next scheduled run near Sunday Midnight ET ({next_sunday_midnight.strftime('%Y-%m-%d %H:%M:%S %Z%z')}).")
-            await asyncio.sleep(wait_seconds)
-            
-            # Double check if it's the right time after waking up
-            now_et_after_sleep = datetime.now(self.ET_TIMEZONE)
-            if now_et_after_sleep.weekday() == 6 and now_et_after_sleep.hour == 0:
-                 print("[Weekly Reset] Reached target time. Starting first reset cycle.")
-                 break # Exit before_loop and start the main loop check
-            else:
-                 print("[Weekly Reset] Woke up, but not the right time yet. Recalculating sleep.")
-                 # Loop continues to recalculate sleep
-
 
 async def setup(bot):
     await bot.add_cog(PPCore(bot))
-    print("✅ PPCore Cog loaded")

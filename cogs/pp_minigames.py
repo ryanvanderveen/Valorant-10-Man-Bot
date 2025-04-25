@@ -109,18 +109,51 @@ class PPMinigames(commands.Cog):
         challenger_roll = await self._perform_duel_roll(challenger_user.id)
         acceptor_roll = await self._perform_duel_roll(acceptor.id)
 
+        # Get profile cog and DB for stat updates/achievements
+        profile_cog = self.bot.get_cog('PPProfile')
+        db = await self._get_db()
+
         result_message = (
             f"🔥 **Duel Result!** 🔥\n"
             f"{challenger_user.mention} rolled: **{challenger_roll} inches**\n"
             f"{acceptor.mention} rolled: **{acceptor_roll} inches**\n\n"
         )
 
+        winner = None # Keep track of the winner
         if challenger_roll > acceptor_roll:
             result_message += f"🏆 **{challenger_user.mention} wins the duel!** 🏆"
+            winner = challenger_user
         elif acceptor_roll > challenger_roll:
             result_message += f"🏆 **{acceptor.mention} wins the duel!** 🏆"
+            winner = acceptor
         else:
             result_message += f"🤝 It's a **draw**! A rare display of equal PP prowess! 🤝"
+
+        # Update stats and check achievements if there's a winner
+        if winner and profile_cog:
+            try:
+                async with db.acquire() as conn:
+                    async with conn.transaction(): # Use transaction for atomicity
+                        # Increment duel_wins and get the new count
+                        new_stats = await conn.fetchrow("""
+                            INSERT INTO user_stats (user_id, duel_wins) VALUES ($1, 1)
+                            ON CONFLICT (user_id) DO UPDATE SET
+                                duel_wins = user_stats.duel_wins + 1
+                            RETURNING duel_wins
+                            """, winner.id)
+                        new_duel_wins = new_stats['duel_wins'] if new_stats else 1
+                        print(f"[Stats] Updated duel_wins for {winner.name} ({winner.id}) to {new_duel_wins}")
+
+                        # Grant achievements based on the new count
+                        if new_duel_wins == 1:
+                            await profile_cog._grant_achievement(winner, 'first_duel_win', ctx)
+                        if new_duel_wins == 10:
+                            await profile_cog._grant_achievement(winner, 'ten_duel_wins', ctx)
+
+            except Exception as e:
+                print(f"Error updating duel stats/achievements for {winner.name}: {e}")
+                import traceback
+                traceback.print_exc()
 
         await ctx.send(result_message)
 
@@ -392,6 +425,7 @@ class PPMinigames(commands.Cog):
             winner = message.author
             question_msg_id = self.current_trivia_question['message_id']
             channel = self.current_trivia_question['channel']
+            profile_cog = self.bot.get_cog('PPProfile') # Get profile cog
             self.current_trivia_question = None
             
             # Set cooldown time when someone answers correctly
@@ -403,56 +437,76 @@ class PPMinigames(commands.Cog):
             db = await self._get_db()
             try:
                 async with db.acquire() as conn:
-                    # Get all available items
-                    items = await conn.fetch("SELECT item_id, name FROM items")
-                    if not items:
-                        raise ValueError("No items found in database")
-                    
-                    # Define item rarities (item_id: weight)
-                    # Lower weight = more rare
-                    item_weights = {
-                        1: 40,  # Growth Potion - common
-                        2: 30,  # Shrink Ray - uncommon
-                        3: 20,  # Lucky Socks - rare
-                        4: 10   # Reroll Token - very rare
-                    }
-                    
-                    # Get all item IDs and their corresponding weights
-                    item_ids = [item['item_id'] for item in items]
-                    weights = [item_weights.get(item_id, 25) for item_id in item_ids]  # Default weight 25 for any new items
-                    
-                    # Choose a random item based on weights
-                    chosen_item_id = random.choices(item_ids, weights=weights, k=1)[0]
-                    chosen_item = next(item for item in items if item['item_id'] == chosen_item_id)
-                    
-                    # Add the item to the user's inventory
-                    await conn.execute("""
-                        INSERT INTO user_inventory (user_id, item_id, quantity)
-                        VALUES ($1, $2, 1)
-                        ON CONFLICT (user_id, item_id)
-                        DO UPDATE SET quantity = user_inventory.quantity + 1
-                    """, winner.id, chosen_item_id)
-                    
-                    # Get rarity text based on weight
-                    weight = item_weights.get(chosen_item_id, 25)
-                    if weight <= 10:
-                        rarity_text = "🌟 VERY RARE 🌟"
-                    elif weight <= 20:
-                        rarity_text = "✨ RARE ✨"
-                    elif weight <= 30:
-                        rarity_text = "🔹 UNCOMMON 🔹"
-                    else:
-                        rarity_text = "COMMON"
-                    
-                    await message.channel.send(
-                        f"🎉 Correct, {winner.mention}! The answer was **{correct_answer}**. "
-                        f"You won a **{chosen_item['name']}**! ({rarity_text}) 🎉"
-                    )
+                    async with conn.transaction(): # Ensure atomicity for stats and rewards
+                        # 1. Update Trivia Wins Stat
+                        new_stats = await conn.fetchrow("""
+                            INSERT INTO user_stats (user_id, trivia_wins) VALUES ($1, 1)
+                            ON CONFLICT (user_id) DO UPDATE SET
+                                trivia_wins = user_stats.trivia_wins + 1
+                            RETURNING trivia_wins
+                            """, winner.id)
+                        new_trivia_wins = new_stats['trivia_wins'] if new_stats else 1
+                        print(f"[Stats] Updated trivia_wins for {winner.name} ({winner.id}) to {new_trivia_wins}")
+
+                        # 2. Check for Trivia Achievements
+                        if profile_cog:
+                            ctx = await self.bot.get_context(message) # Get context for achievement message
+                            if new_trivia_wins == 1:
+                                await profile_cog._grant_achievement(winner, 'first_win_trivia', ctx)
+                            if new_trivia_wins == 10:
+                                await profile_cog._grant_achievement(winner, 'ten_wins_trivia', ctx)
+
+                        # 3. Give Item Reward (Existing Logic)
+                        # Get all available items
+                        items = await conn.fetch("SELECT item_id, name FROM items")
+                        if not items:
+                            raise ValueError("No items found in database")
+                        
+                        # Define item rarities (item_id: weight)
+                        # Lower weight = more rare
+                        item_weights = {
+                            1: 40,  # Growth Potion - common
+                            2: 30,  # Shrink Ray - uncommon
+                            3: 20,  # Lucky Socks - rare
+                            4: 10   # Reroll Token - very rare
+                        }
+                        
+                        # Get all item IDs and their corresponding weights
+                        item_ids = [item['item_id'] for item in items]
+                        weights = [item_weights.get(item_id, 25) for item_id in item_ids]  # Default weight 25 for any new items
+                        
+                        # Choose a random item based on weights
+                        chosen_item_id = random.choices(item_ids, weights=weights, k=1)[0]
+                        chosen_item = next(item for item in items if item['item_id'] == chosen_item_id)
+                        
+                        # Add the item to the user's inventory
+                        await conn.execute("""
+                            INSERT INTO user_inventory (user_id, item_id, quantity)
+                            VALUES ($1, $2, 1)
+                            ON CONFLICT (user_id, item_id)
+                            DO UPDATE SET quantity = user_inventory.quantity + 1
+                        """, winner.id, chosen_item_id)
+                        
+                        # Get rarity text based on weight
+                        weight = item_weights.get(chosen_item_id, 25)
+                        if weight <= 10:
+                            rarity_text = "🌟 VERY RARE 🌟"
+                        elif weight <= 20:
+                            rarity_text = "✨ RARE ✨"
+                        elif weight <= 30:
+                            rarity_text = "🔹 UNCOMMON 🔹"
+                        else:
+                            rarity_text = "COMMON"
+                        
+                        await message.channel.send(
+                            f"🎉 Correct, {winner.mention}! The answer was **{correct_answer}**. "
+                            f"You won a **{chosen_item['name']}**! ({rarity_text}) 🎉"
+                        )
             except Exception as e:
                 print(f"Error giving trivia reward: {e}")
                 # Send a simplified message if reward fails
                 try:
-                    await channel.send(f"🎉 Correct, {winner.mention}! The answer was: **{correct_answer}** (Error giving item reward)")
+                    await channel.send(f"🎉 Correct, {winner.mention}! The answer was: **{correct_answer}** (Error giving item reward or updating stats)")
                 except (discord.NotFound, discord.Forbidden) as send_e:
                     print(f"Error sending trivia correct message after reward failure: {send_e}")
         else:

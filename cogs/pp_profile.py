@@ -1,165 +1,196 @@
 import discord
 from discord.ext import commands
-import traceback
+import asyncpg
+import os
+from datetime import datetime, timezone
+
+ACHIEVEMENT_CHANNEL_ID = 934181022659129444 # Your achievement announcement channel
 
 class PPProfile(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.db_pool = None
+
+    async def cog_load(self):
+        print("Attempting to connect to the database from PPProfile...")
+        try:
+            self.db_pool = await asyncpg.create_pool(dsn=os.getenv('DATABASE_URL'))
+            print("✅ PPProfile Database pool created successfully.")
+        except Exception as e:
+            print(f"❌ Failed to connect to PPProfile database: {e}")
+
+    async def cog_unload(self):
+        if self.db_pool:
+            await self.db_pool.close()
+            print("PPProfile Database pool closed.")
 
     async def _get_db(self):
-        """Get database pool from PPDB cog"""
-        db_cog = self.bot.get_cog('PPDB')
-        if not db_cog:
-            raise RuntimeError("PPDB cog not loaded!")
-        return await db_cog.get_db()
+        if not self.db_pool:
+             # Attempt to reconnect or use the main bot pool if available
+            if hasattr(self.bot, 'db_pool') and self.bot.db_pool:
+                self.db_pool = self.bot.db_pool
+            else:
+                try: # Last resort: create a new pool just for this cog
+                    print("PPProfile trying fallback DB connection...")
+                    self.db_pool = await asyncpg.create_pool(dsn=os.getenv('DATABASE_URL'))
+                    print("✅ PPProfile Fallback DB pool created.")
+                except Exception as e:
+                    print(f"❌ PPProfile Fallback DB connection failed: {e}")
+                    raise ConnectionError("Database pool is not initialized in PPProfile.")
+        return self.db_pool
 
-    @commands.command(aliases=['prof'])
+    @commands.command(name='profile', aliases=['prof'], help='Shows your PP profile and stats.')
     async def profile(self, ctx, *, member: discord.Member = None):
-        """Shows a user's PP profile and stats."""
-        target_user = member or ctx.author
-        print(f" {ctx.author} triggered 'pls profile' for {target_user.name}")
-
+        if member is None:
+            member = ctx.author
+        
+        user_id = member.id
         db = await self._get_db()
 
-        try:
-            async with db.acquire() as conn:
-                # --- Fetch Data ---
-                # Get current PP size (from pp_core's table)
-                current_pp = await conn.fetchrow(
-                    "SELECT size FROM pp_sizes WHERE user_id = $1",
-                    target_user.id
-                )
-                current_size = current_pp['size'] if current_pp else 0 # Default to 0 if no record
-
-                # Get stats from user_stats, defaulting to 0 if no record exists
-                stats = await conn.fetchrow("""
-                    SELECT 
-                        COALESCE(trivia_wins, 0) as trivia_wins,
-                        COALESCE(duel_wins, 0) as duel_wins,
-                        COALESCE(total_rolls, 0) as total_rolls,
-                        COALESCE(zero_rolls, 0) as zero_rolls,
-                        COALESCE(twenty_rolls, 0) as twenty_rolls
-                    FROM user_stats 
-                    WHERE user_id = $1
-                    """, target_user.id)
-                
-                # Handle case where user has no stats record at all
-                if not stats:
-                    stats = {'trivia_wins': 0, 'duel_wins': 0, 'total_rolls': 0, 'zero_rolls': 0, 'twenty_rolls': 0}
-
-                # Get earned achievements
-                earned_achievements_raw = await conn.fetch("""
-                    SELECT a.name, a.description
-                    FROM user_achievements ua
-                    JOIN achievements a ON ua.achievement_id = a.achievement_id
-                    WHERE ua.user_id = $1
-                    ORDER BY ua.earned_at ASC
-                    """, target_user.id)
-
-                # --- Create Embed ---
-                embed = discord.Embed(
-                    title=f"{target_user.display_name}'s PP Profile",
-                    color=target_user.color # Use member's role color
-                )
-                embed.set_thumbnail(url=target_user.display_avatar.url)
-
-                embed.add_field(name="Current PP Size", value=f"8{'=' * current_size}D (**{current_size} inches**)", inline=False)
-
-                # Add Stats Fields
-                stats_text = (
-                    f"**Trivia Wins:** {stats['trivia_wins']}\n"
-                    f"**Duel Wins:** {stats['duel_wins']}\n"
-                    f"**Total Rolls:** {stats['total_rolls']}\n"
-                    f"**Zero Rolls:** {stats['zero_rolls']}\n"
-                    f"**Twenty Rolls:** {stats['twenty_rolls']}"
-                )
-                embed.add_field(name="📈 Statistics", value=stats_text, inline=True)
-
-                # Add Achievements Field
-                if earned_achievements_raw:
-                    achievements_text = "\n".join([f"🏆 **{ach['name']}**: {ach['description']}" for ach in earned_achievements_raw])
-                    embed.add_field(name="🏅 Achievements", value=achievements_text, inline=True)
-                else:
-                    embed.add_field(name="🏅 Achievements", value="None earned yet!", inline=True)
-
-                embed.set_footer(text=f"User ID: {target_user.id}")
-
-            await ctx.send(embed=embed)
-
-        except Exception as e:
-            print(f" Error creating profile for {target_user.name}: {e}")
-            traceback.print_exc()
-            await ctx.send(f"Could not fetch profile data for {target_user.mention}. Please try again.")
-
-    async def _grant_achievement(self, user: discord.Member, achievement_id: str, ctx: commands.Context = None):
-        """Checks if user has achievement, grants if not, handles rewards. Sends public message if ctx provided."""
-        granted_new = False # Flag to track if we actually granted it now
-        if not user: # Cannot grant to user not in server
-            return False
-            
-        db = await self._get_db()
         async with db.acquire() as conn:
-            async with conn.transaction(): # Ensure atomicity
-                # Check if user already has this achievement
-                exists = await conn.fetchval("SELECT 1 FROM user_achievements WHERE user_id = $1 AND achievement_id = $2", user.id, achievement_id)
-                if exists:
-                    # print(f"[Achievement] User {user.id} already has '{achievement_id}'.")
-                    return False # Already has it
+            # Fetch PP Size
+            pp_record = await conn.fetchrow("SELECT size, last_roll_timestamp FROM pp_sizes WHERE user_id = $1", user_id)
+            # Fetch Stats
+            stats_record = await conn.fetchrow("SELECT * FROM user_stats WHERE user_id = $1", user_id)
+            # Fetch Achievements
+            achievements_earned = await conn.fetch("""
+                SELECT a.name, a.description FROM user_achievements ua
+                JOIN achievements a ON ua.achievement_id = a.achievement_id
+                WHERE ua.user_id = $1 ORDER BY ua.earned_at
+            """, user_id)
 
-                # Get achievement details (including potential reward role)
-                achievement_details = await conn.fetchrow("SELECT name, description, reward_role_name FROM achievements WHERE achievement_id = $1", achievement_id)
-                if not achievement_details:
-                    print(f"⚠️ [Achievement] Definition for '{achievement_id}' not found in DB.")
-                    return False
+        embed = discord.Embed(title=f"{member.display_name}'s Profile", color=member.color)
+        embed.set_thumbnail(url=member.display_avatar.url)
 
-                # Grant the achievement
+        # PP Info
+        if pp_record:
+            pp_size = pp_record['size']
+            last_roll = pp_record['last_roll_timestamp']
+            embed.add_field(name="Current PP Size", value=f"{pp_size} inches", inline=True)
+            if last_roll:
+                 embed.add_field(name="Last Measured", value=discord.utils.format_dt(last_roll, style='R'), inline=True)
+            else:
+                embed.add_field(name="Last Measured", value="Never", inline=True)
+        else:
+            embed.add_field(name="Current PP Size", value="Not measured yet", inline=True)
+            embed.add_field(name="Last Measured", value="Never", inline=True)
+
+        # Stats Info
+        if stats_record:
+            embed.add_field(name="Total Rolls", value=stats_record.get('total_rolls', 0), inline=True)
+            embed.add_field(name="Zero Rolls", value=stats_record.get('zero_rolls', 0), inline=True)
+            embed.add_field(name="Twenty Rolls", value=stats_record.get('twenty_rolls', 0), inline=True)
+            embed.add_field(name="Duel Wins", value=stats_record.get('duel_wins', 0), inline=True)
+            embed.add_field(name="Trivia Wins", value=stats_record.get('trivia_wins', 0), inline=True)
+            embed.add_field(name="Days as Hog Daddy", value=stats_record.get('days_as_hog_daddy', 0), inline=True)
+        else:
+            embed.add_field(name="Stats", value="No stats recorded yet.", inline=False)
+
+        # Achievements Info
+        if achievements_earned:
+            ach_text = "\n".join([f"- **{ach['name']}**: {ach['description']}" for ach in achievements_earned])
+            embed.add_field(name="Achievements", value=ach_text if ach_text else "None", inline=False)
+        else:
+            embed.add_field(name="Achievements", value="None", inline=False)
+
+        await ctx.send(embed=embed)
+
+    async def _grant_achievement(self, user: discord.Member, achievement_id: str, ctx: commands.Context):
+        """Grants an achievement if not already earned, updates DB, announces, and gives role."""
+        db = await self._get_db()
+        guild = user.guild
+        
+        async with db.acquire() as conn:
+            async with conn.transaction():
+                # Check if already earned
+                already_earned = await conn.fetchval("SELECT 1 FROM user_achievements WHERE user_id = $1 AND achievement_id = $2", user.id, achievement_id)
+                if already_earned:
+                    return # Already has it
+
+                # Get achievement details (including potential role reward)
+                achievement_info = await conn.fetchrow("SELECT name, description, reward_role_name FROM achievements WHERE achievement_id = $1", achievement_id)
+                if not achievement_info:
+                    print(f"Grant Achievement Error: Achievement ID '{achievement_id}' not found in database.")
+                    return
+
+                # Add to user_achievements
                 await conn.execute("INSERT INTO user_achievements (user_id, achievement_id) VALUES ($1, $2)", user.id, achievement_id)
-                granted_new = True # Mark as newly granted
-                print(f"[Achievement] Granted '{achievement_id}' to user {user.name} ({user.id}).")
+                print(f"[Achievement] Granted '{achievement_id}' to {user.name} ({user.id})")
 
-                # Handle Role Reward
-                reward_role_name = achievement_details['reward_role_name']
-                if reward_role_name:
-                    role = discord.utils.get(user.guild.roles, name=reward_role_name)
+                # Announce in channel
+                announce_channel = self.bot.get_channel(ACHIEVEMENT_CHANNEL_ID)
+                if announce_channel:
+                    try:
+                        await announce_channel.send(f"🏆 Achievement Unlocked! {user.mention} earned **{achievement_info['name']}**! ({achievement_info['description']}) 🏆")
+                    except discord.Forbidden:
+                        print(f"Grant Achievement Error: Missing permissions to send to channel {ACHIEVEMENT_CHANNEL_ID}.")
+                    except discord.HTTPException as e:
+                        print(f"Grant Achievement Error: Failed to send announcement: {e}")
+                else:
+                    print(f"Grant Achievement Error: Announcement channel {ACHIEVEMENT_CHANNEL_ID} not found.")
+
+                # Grant role reward if specified
+                role_name = achievement_info['reward_role_name']
+                if role_name:
+                    role = discord.utils.get(guild.roles, name=role_name)
                     if role:
                         if role not in user.roles:
                             try:
-                                await user.add_roles(role, reason=f"Earned achievement: {achievement_details['name']}")
-                                print(f"[Achievement] Granted role '{role.name}' to {user.name} for '{achievement_id}'.")
+                                await user.add_roles(role, reason=f"Achievement unlocked: {achievement_info['name']}")
+                                print(f"[Achievement] Granted role '{role.name}' to {user.name}")
                             except discord.Forbidden:
-                                print(f"⚠️ [Achievement] Bot lacks permission to grant role '{role.name}' for achievement '{achievement_id}'.")
-                            except Exception as e:
-                                print(f"⚠️ [Achievement] Error granting role '{role.name}' for '{achievement_id}': {e}")
+                                print(f"Grant Achievement Error: Bot lacks permission to add role '{role.name}' to {user.name}.")
+                                if ctx: await ctx.send(f"(Couldn't grant the '{role.name}' role reward due to permissions.)", delete_after=15)
+                            except discord.HTTPException as e:
+                                print(f"Grant Achievement Error: Failed to add role '{role.name}': {e}")
                         else:
-                            print(f"[Achievement] User {user.name} already had role '{role.name}'.")
+                            print(f"[Achievement] User {user.name} already has role '{role.name}'.")
                     else:
-                         print(f"⚠️ [Achievement] Reward role '{reward_role_name}' for '{achievement_id}' not found in guild {user.guild.name}.")
-
-                # --- DM Notification Removed ---
-                # try:
-                #     await user.send(f"🏆 **Achievement Unlocked!** 🏆\nYou earned: **{achievement_details['name']}** ({achievement_details['description']})")
-                # except discord.Forbidden:
-                #     print(f"[Achievement] Could not DM user {user.name} about achievement '{achievement_id}'.")
-                # except Exception as e:
-                #     print(f"[Achievement] Error DMing user {user.name}: {e}")
+                        print(f"Grant Achievement Error: Role '{role_name}' not found in guild '{guild.name}'.")
+                        if ctx: await ctx.send(f"(Achievement role '{role_name}' not found.)", delete_after=15)
+    
+    async def _grant_achievement_no_ctx(self, user_id: int, achievement_id: str, announcement_channel: discord.TextChannel):
+        """Grants an achievement without a command context (for tasks). Fetches user/guild info."""
+        db = await self._get_db()
+        guild = announcement_channel.guild
+        user = guild.get_member(user_id)
+        if not user:
+            print(f"Grant Achievement (NoCtx) Error: User {user_id} not found in guild {guild.name}.")
+            return
         
-        # Send public notification if newly granted and ctx is available
-        if granted_new and achievement_details: # Send regardless of ctx now, but need details
-            announcement_channel_id = 934181022659129444
-            channel = self.bot.get_channel(announcement_channel_id)
-            if channel:
+        # Re-use the main logic, passing None for ctx where needed inside the function
+        async with db.acquire() as conn:
+            async with conn.transaction():
+                already_earned = await conn.fetchval("SELECT 1 FROM user_achievements WHERE user_id = $1 AND achievement_id = $2", user.id, achievement_id)
+                if already_earned:
+                    return
+
+                achievement_info = await conn.fetchrow("SELECT name, description, reward_role_name FROM achievements WHERE achievement_id = $1", achievement_id)
+                if not achievement_info:
+                    print(f"Grant Achievement (NoCtx) Error: Achievement ID '{achievement_id}' not found.")
+                    return
+
+                await conn.execute("INSERT INTO user_achievements (user_id, achievement_id) VALUES ($1, $2)", user.id, achievement_id)
+                print(f"[Achievement][NoCtx] Granted '{achievement_id}' to {user.name} ({user.id})")
+
+                # Announce
                 try:
-                    await channel.send(f"🎉 **Achievement Unlocked!** {user.mention} just earned **{achievement_details['name']}**! ({achievement_details['description']}) 🎉")
-                except discord.Forbidden:
-                    print(f"⚠️ [Achievement] Bot lacks permission to send message in announcement channel {announcement_channel_id}.")
+                    await announcement_channel.send(f"🏆 Achievement Unlocked! {user.mention} earned **{achievement_info['name']}**! ({achievement_info['description']}) 🏆")
                 except Exception as e:
-                    print(f"[Achievement] Error sending public notification to channel {announcement_channel_id}: {e}")
-            else:
-                print(f"⚠️ [Achievement] Could not find announcement channel with ID {announcement_channel_id}.")
-        
-        return granted_new # Return whether it was newly granted
+                     print(f"Grant Achievement (NoCtx) Error: Failed to send announcement: {e}")
 
+                # Grant role
+                role_name = achievement_info['reward_role_name']
+                if role_name:
+                    role = discord.utils.get(guild.roles, name=role_name)
+                    if role and role not in user.roles:
+                        try:
+                            await user.add_roles(role, reason=f"Achievement unlocked (Task): {achievement_info['name']}")
+                            print(f"[Achievement][NoCtx] Granted role '{role.name}' to {user.name}")
+                        except Exception as e:
+                            print(f"Grant Achievement (NoCtx) Error: Failed to add role '{role.name}': {e}")
+                    elif not role:
+                         print(f"Grant Achievement (NoCtx) Error: Role '{role_name}' not found.")
 
 async def setup(bot):
     await bot.add_cog(PPProfile(bot))
-    print("✅ PPProfile Cog loaded")
