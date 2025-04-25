@@ -319,7 +319,7 @@ class PPCore(commands.Cog):
         await self.bot.wait_until_ready()
         print('Bot ready, daily reset task loop starting.')
 
-    @commands.command(name='pp', help='Calculates your pp size (once per hour)')
+    @commands.command(name='pp', help='Calculates your pp size. Can be used once per hour (resets at :00). Highest roll daily wins Hog Daddy!')
     async def pp(self, ctx):
         user = ctx.author
         user_id = user.id
