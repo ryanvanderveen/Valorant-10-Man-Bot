@@ -101,6 +101,7 @@ class PPCore(commands.Cog):
         # Get event cog for active effects
         event_cog = self.bot.get_cog('PPEvents')
         minigames_cog = self.bot.get_cog('PPMinigames')
+        profile_cog = self.bot.get_cog('PPProfile') # <-- Get the profile cog
 
         try:
             async with db.acquire() as conn:
@@ -209,11 +210,23 @@ class PPCore(commands.Cog):
                         await ctx.send(f"{user.mention}, timed out. Keeping the original roll of **{final_size} inches**. Your Reroll Token was consumed.")
 
                 # Update Database
+                # 1. Update pp_sizes table (handles current size and last used time)
                 await conn.execute(
                     "INSERT INTO pp_sizes (user_id, size, last_used) VALUES ($1, $2, $3) "
                     "ON CONFLICT(user_id) DO UPDATE SET size = EXCLUDED.size, last_used = EXCLUDED.last_used",
                     user_id, final_size, now_utc
                 )
+
+                # 2. Update user_stats table
+                await conn.execute("""
+                    INSERT INTO user_stats (user_id, total_rolls, zero_rolls, twenty_rolls) 
+                    VALUES ($1, 1, CASE WHEN $2 = 0 THEN 1 ELSE 0 END, CASE WHEN $2 = 20 THEN 1 ELSE 0 END)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        total_rolls = user_stats.total_rolls + 1,
+                        zero_rolls = user_stats.zero_rolls + CASE WHEN $2 = 0 THEN 1 ELSE 0 END,
+                        twenty_rolls = user_stats.twenty_rolls + CASE WHEN $2 = 20 THEN 1 ELSE 0 END
+                    """, user_id, final_size)
+                print(f"[Stats] Updated roll stats for {user.name} (size: {final_size})")
 
                 # Send final message if no reroll prompt occurred
                 if not reroll_available:
@@ -224,6 +237,13 @@ class PPCore(commands.Cog):
 
                 # Update roles
                 await self.update_current_biggest(ctx.guild)
+
+                # Check for Achievements (only if profile cog is loaded)
+                if profile_cog:
+                    if final_size == 0:
+                         await profile_cog._grant_achievement(user, 'roll_a_zero', ctx) # Pass ctx
+                    elif final_size == 20:
+                         await profile_cog._grant_achievement(user, 'roll_a_twenty', ctx) # Pass ctx
 
                 # Record score if PP Off is active
                 if is_pp_off_active_here and minigames_cog:
