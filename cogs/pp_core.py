@@ -16,6 +16,7 @@ class LeaderboardView(discord.ui.View):
     def __init__(self, data, title="PP Leaderboard (Overall Top Rolls)", sep=10):
         super().__init__(timeout=180) # 3 minute timeout
         self.data = data
+        self.current_page = 1 # Initialize current page
         self.total_pages = (len(data) + sep - 1) // sep
         self.sep = sep
         self.title = title
@@ -393,7 +394,9 @@ class PPCore(commands.Cog):
             elif final_size == 20 and stats and stats['twenty_rolls'] == 1:
                 await profile_cog._grant_achievement(user, 'roll_a_twenty', ctx)
 
-        measurement = f"{final_size} inches"
+        # Generate the visual and text measurement
+        visual_pp = f"8{'=' * final_size}D" if final_size > 0 else "8D (Micro)" # Handle zero case nicely
+        measurement = f"{visual_pp} ({final_size} inches)"
         await ctx.send(f"{user.mention}'s pp is {measurement}")
 
         if ctx.guild: # Ensure it's in a guild context
