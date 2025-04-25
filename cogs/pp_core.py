@@ -225,9 +225,14 @@ class PPCore(commands.Cog):
 
         db = await self._get_db()
         profile_cog = self.bot.get_cog('PPProfile')
-        guild = self.bot.guilds[0] if self.bot.guilds else None # Assume bot is in one guild for simplicity
+        
+        # Fetch the specific guild by ID
+        guild = self.bot.get_guild(934160898828931143) 
+        
         if not guild:
-            print("Reset Task Error: Bot is not in any guilds?")
+            # Log an error if the specific guild is not found after the bot is ready.
+            # This might indicate the bot isn't in the expected guild.
+            print(f"Reset Task Error: Could not find Guild with ID 934160898828931143.")
             return
         
         hog_role = await self._get_hog_daddy_role(guild)
