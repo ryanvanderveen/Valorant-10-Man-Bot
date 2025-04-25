@@ -31,6 +31,8 @@ intents = discord.Intents.default()
 intents.messages = True  # ✅ Enable message intent
 intents.guilds = True
 intents.message_content = True  # ✅ Required for commands
+intents.members = True # ✅ Required for member cache/fetching
+
 def custom_prefix(bot, message):
     return commands.when_mentioned_or("pls ", "Pls ", "PLS ", "pLS ", "pLs ", "plS ")(bot, message)
 
@@ -45,9 +47,10 @@ async def load_cogs():
         "pp_events",     # Event system
         "pp_items",      # Item and inventory system
         "pp_minigames",  # Mini-games (trivia, duels, pp-off)
-        "help_cog",      # Help command
+        "pp_profile",    # Added for profile command
+        "utility",       # Added for custom help command & other utils
         "info_cog",      # Bot information
-        "utility_core",  # Core utility functions
+        "utility_core",  # Core utility functions (Review if still needed?)
         "fun"           # Fun commands
     ]
     for cog in COGS:

@@ -46,8 +46,21 @@ class LeaderboardView(discord.ui.View):
         start_rank = (self.current_page - 1) * self.sep + 1
         for i, record in enumerate(page_data):
             rank = start_rank + i
-            user = guild.get_member(record['user_id']) or f"User ID: {record['user_id']}"
-            user_mention = user.mention if isinstance(user, discord.Member) else user
+            user = guild.get_member(record['user_id']) # Try cache first
+            user_mention = f"User ID: {record['user_id']}" # Default fallback
+            if user:
+                user_mention = user.mention
+            else:
+                # If not in cache, try fetching from Discord API
+                try:
+                    fetched_user = await guild.fetch_member(record['user_id'])
+                    if fetched_user:
+                        user_mention = fetched_user.mention
+                except discord.NotFound:
+                    user_mention = f"User ID: {record['user_id']} (Not Found)" # User left?
+                except discord.HTTPException:
+                    user_mention = f"User ID: {record['user_id']} (Fetch Failed)" # API error
+                    
             description += f"{rank}. {user_mention} - {record['size']} inches\n"
         embed.description = description or "No users found."
         embed.set_footer(text=f"Page {self.current_page}/{self.total_pages}")
@@ -216,6 +229,8 @@ class PPCore(commands.Cog):
     @tasks.loop(time=time(hour=DAILY_RESET_HOUR_UTC, minute=1, tzinfo=pytz.utc)) # Run daily at 00:01 UTC
     async def daily_reset_task(self):
         """Calculates previous day's winner, updates stats, grants achievement, announces, and clears role."""
+        await self.bot.wait_until_ready() # Ensure bot is ready before proceeding
+        
         print(f"--- Running Daily Hog Daddy Reset Task ({datetime.now(pytz.utc)}) ---")
         now_utc = datetime.now(pytz.utc)
         end_of_yesterday = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
