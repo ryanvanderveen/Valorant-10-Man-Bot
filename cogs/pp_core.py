@@ -231,7 +231,18 @@ class PPCore(commands.Cog):
                 try:
                     await user.add_roles(hog_role, reason="New Daily Hog Daddy")
                     print(f"Added '{hog_role.name}' to {user.name}")
+                    
+                    # Send announcement to both the command channel and the announcement channel
                     await ctx.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! 👑")
+                    
+                    # Also send to the announcement channel if different from command channel
+                    announcement_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+                    if announcement_channel and announcement_channel.id != ctx.channel.id:
+                        try:
+                            await announcement_channel.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! 👑")
+                        except Exception as e:
+                            print(f"Failed to send announcement to announcement channel: {e}")
+                            
                 except discord.Forbidden:
                     print(f"Bot lacks permission to add role to {user.name}.")
                     await ctx.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! (But I couldn't assign the role.)")
@@ -344,6 +355,13 @@ class PPCore(commands.Cog):
                             print(f"Failed to clear role from {member_to_clear.name}: {e}")
                     elif not member_to_clear:
                          print(f"Could not find member {current_holder_id} to clear role.")
+                
+                # Reset the leaderboard by clearing the pp_sizes table
+                try:
+                    await conn.execute("DELETE FROM pp_sizes")
+                    print("Leaderboard reset: pp_sizes table cleared for the new day.")
+                except Exception as e:
+                    print(f"Error resetting leaderboard: {e}")
 
                 # Record that we've run the reset for today
                 await conn.execute("""
@@ -357,14 +375,6 @@ class PPCore(commands.Cog):
                 # Reset internal tracker for the new day
                 self.current_daily_hog_daddy_id = None
                 print("Daily Hog Daddy ID reset for the new day.")
-                
-                # Reset the leaderboard by clearing the pp_sizes table
-                try:
-                    await conn.execute("DELETE FROM pp_sizes")
-                    print("Leaderboard reset: pp_sizes table cleared for the new day.")
-                except Exception as e:
-                    print(f"Error resetting leaderboard: {e}")
-                    
                 print("--- Daily Reset Task Finished ---")
         except Exception as e:
             print(f"ERROR in daily_reset_task: {e}")
