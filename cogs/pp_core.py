@@ -103,6 +103,17 @@ class PPCore(commands.Cog):
         try:
             self.db_pool = await asyncpg.create_pool(dsn=os.getenv('DATABASE_URL'))
             print("✅ Database pool created successfully.")
+            
+            # Create bot_state table if it doesn't exist
+            async with self.db_pool.acquire() as conn:
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS bot_state (
+                        key TEXT PRIMARY KEY,
+                        value TEXT,
+                        updated_at TIMESTAMP WITH TIME ZONE
+                    )
+                """)
+                
             await self._get_hog_daddy_role(self.bot.guilds[0]) 
             await self._initialize_daily_hog_daddy() # Fetch today's leader
             self.daily_reset_task.start()
@@ -212,6 +223,8 @@ class PPCore(commands.Cog):
                         print(f"Bot lacks permission to remove role from {previous_member.name}.")
                     except discord.HTTPException as e:
                         print(f"Failed to remove role from {previous_member.name}: {e}")
+                elif not previous_member:
+                     print(f"Could not find member {previous_hog_id} to clear role.")
 
             # Add role to new holder (if they don't have it)
             if hog_role not in user.roles:
@@ -232,113 +245,163 @@ class PPCore(commands.Cog):
         await self.bot.wait_until_ready() # Ensure bot is ready before proceeding
         
         print(f"--- Running Daily Hog Daddy Reset Task ({datetime.now(pytz.utc)}) ---")
-        now_utc = datetime.now(pytz.utc)
-        end_of_yesterday = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_of_yesterday = end_of_yesterday - timedelta(days=1)
+        try:
+            now_utc = datetime.now(pytz.utc)
+            end_of_yesterday = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+            start_of_yesterday = end_of_yesterday - timedelta(days=1)
 
-        print(f"Checking for winner between {start_of_yesterday} and {end_of_yesterday}")
+            print(f"Checking for winner between {start_of_yesterday} and {end_of_yesterday}")
 
-        db = await self._get_db()
-        profile_cog = self.bot.get_cog('PPProfile')
-        
-        # Fetch the specific guild by ID
-        guild = self.bot.get_guild(934160898828931143) 
-        
-        if not guild:
-            # Log an error if the specific guild is not found after the bot is ready.
-            # This might indicate the bot isn't in the expected guild.
-            print(f"Reset Task Error: Could not find Guild with ID 934160898828931143.")
-            return
-        
-        hog_role = await self._get_hog_daddy_role(guild)
-        if not hog_role:
-            print("Reset Task Error: Daily Hog Daddy role not found.")
-            # Continue without role logic? Or stop? Let's continue for stats/achievements.
+            db = await self._get_db()
+            profile_cog = self.bot.get_cog('PPProfile')
+            
+            # Fetch the specific guild by ID
+            guild = self.bot.get_guild(934160898828931143) 
+            
+            if not guild:
+                # Log an error if the specific guild is not found after the bot is ready.
+                # This might indicate the bot isn't in the expected guild.
+                print(f"Reset Task Error: Could not find Guild with ID 934160898828931143.")
+                return
+            
+            hog_role = await self._get_hog_daddy_role(guild)
+            if not hog_role:
+                print("Reset Task Error: Daily Hog Daddy role not found.")
+                # Continue without role logic? Or stop? Let's continue for stats/achievements.
 
-        async with db.acquire() as conn:
-            # Find yesterday's winner (highest score, earliest timestamp wins ties)
-            winner_record = await conn.fetchrow("""
-                SELECT user_id, MAX(size) as max_size
-                FROM pp_sizes
-                WHERE last_roll_timestamp >= $1 AND last_roll_timestamp < $2
-                GROUP BY user_id
-                ORDER BY max_size DESC, MIN(last_roll_timestamp) ASC
-                LIMIT 1
-            """, start_of_yesterday, end_of_yesterday)
+            async with db.acquire() as conn:
+                # Find yesterday's winner (highest score, earliest timestamp wins ties)
+                winner_record = await conn.fetchrow("""
+                    SELECT user_id, MAX(size) as max_size
+                    FROM pp_sizes
+                    WHERE last_roll_timestamp >= $1 AND last_roll_timestamp < $2
+                    GROUP BY user_id
+                    ORDER BY max_size DESC, MIN(last_roll_timestamp) ASC
+                    LIMIT 1
+                """, start_of_yesterday, end_of_yesterday)
 
-            yesterdays_winner_member = None
-            if winner_record:
-                winner_id = winner_record['user_id']
-                winner_size = winner_record['max_size']
-                print(f"Yesterday's winner found: User ID {winner_id} with score {winner_size}")
-                
-                yesterdays_winner_member = guild.get_member(winner_id)
-                winner_mention = f"<@{winner_id}>" 
-                if yesterdays_winner_member:
-                    winner_mention = yesterdays_winner_member.mention
+                yesterdays_winner_member = None
+                if winner_record:
+                    winner_id = winner_record['user_id']
+                    winner_size = winner_record['max_size']
+                    print(f"Yesterday's winner found: User ID {winner_id} with score {winner_size}")
+                    
+                    yesterdays_winner_member = guild.get_member(winner_id)
+                    winner_mention = f"<@{winner_id}>" 
+                    if yesterdays_winner_member:
+                        winner_mention = yesterdays_winner_member.mention
 
-                async with conn.transaction():
-                    # Update stats
-                    await conn.execute("""
-                        INSERT INTO user_stats (user_id, days_as_hog_daddy)
-                        VALUES ($1, 1)
-                        ON CONFLICT (user_id) DO UPDATE SET
-                            days_as_hog_daddy = user_stats.days_as_hog_daddy + 1
-                    """, winner_id)
-                    print(f"Incremented days_as_hog_daddy for {winner_id}")
+                    async with conn.transaction():
+                        # Update stats
+                        await conn.execute("""
+                            INSERT INTO user_stats (user_id, days_as_hog_daddy)
+                            VALUES ($1, 1)
+                            ON CONFLICT (user_id) DO UPDATE SET
+                                days_as_hog_daddy = user_stats.days_as_hog_daddy + 1
+                        """, winner_id)
+                        print(f"Incremented days_as_hog_daddy for {winner_id}")
 
-                    # Grant achievement if needed
-                    if profile_cog:
-                        # We need a context-like object or channel to send the achievement message
-                        # Let's try sending to a default channel (replace with your channel ID)
-                        log_channel_id = ANNOUNCEMENT_CHANNEL_ID # Replace with your actual log/announcement channel ID
-                        log_channel = self.bot.get_channel(log_channel_id)
-                        
-                        if log_channel:
-                           await profile_cog._grant_achievement_no_ctx(winner_id, 'became_hog_daddy', log_channel) 
-                        else:
-                            print(f"Cannot grant achievement, log channel {log_channel_id} not found.")
+                        # Grant achievement if needed
+                        if profile_cog:
+                            # We need a context-like object or channel to send the achievement message
+                            # Let's try sending to a default channel (replace with your channel ID)
+                            log_channel_id = ANNOUNCEMENT_CHANNEL_ID # Replace with your actual log/announcement channel ID
+                            log_channel = self.bot.get_channel(log_channel_id)
+                            
+                            if log_channel:
+                               await profile_cog._grant_achievement_no_ctx(winner_id, 'became_hog_daddy', log_channel) 
+                            else:
+                                print(f"Cannot grant achievement, log channel {log_channel_id} not found.")
 
-                # Announce yesterday's winner
-                announcement_channel = guild.system_channel or log_channel # Use system channel or fallback
-                if announcement_channel:
-                    try:
-                        await announcement_channel.send(f"🏆 Congratulations to {winner_mention} for being yesterday's **Hog Daddy** with a top roll of **{winner_size} inches**! They have held the title {await conn.fetchval('SELECT days_as_hog_daddy FROM user_stats WHERE user_id = $1', winner_id)} times! 🏆")
-                    except discord.Forbidden:
-                         print(f"Failed to send announcement to {announcement_channel.name}: Missing permissions.")
+                    # Announce yesterday's winner
+                    announcement_channel = guild.system_channel or self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID) # Use system channel or fallback
+                    if announcement_channel:
+                        try:
+                            await announcement_channel.send(f"🏆 Congratulations to {winner_mention} for being yesterday's **Hog Daddy** with a top roll of **{winner_size} inches**! They have held the title {await conn.fetchval('SELECT days_as_hog_daddy FROM user_stats WHERE user_id = $1', winner_id)} times! 🏆")
+                        except discord.Forbidden:
+                             print(f"Failed to send announcement to {announcement_channel.name}: Missing permissions.")
+                        except Exception as e:
+                             print(f"Failed to send announcement to {announcement_channel.name}: {e}")
+                    else:
+                        print("Failed to send announcement: No suitable channel found.")
+
+                    # --- End of DB transaction ---
+
                 else:
-                    print("Failed to send announcement: No suitable channel found.")
+                    print("No winner found for yesterday.")
 
-                # --- End of DB transaction ---
+                # Clear role from the user who held it at midnight (might be yesterday's winner or someone else if roles weren't updated perfectly)
+                current_holder_id = self.current_daily_hog_daddy_id # Who held it at the end of the day
+                if current_holder_id and hog_role:
+                    member_to_clear = guild.get_member(current_holder_id)
+                    if member_to_clear and hog_role in member_to_clear.roles:
+                        try:
+                            await member_to_clear.remove_roles(hog_role, reason="Daily reset")
+                            print(f"Cleared Daily Hog Daddy role from {member_to_clear.name} for reset.")
+                        except discord.Forbidden:
+                             print(f"Failed to clear role from {member_to_clear.name}: Missing permissions.")
+                        except discord.HTTPException as e:
+                            print(f"Failed to clear role from {member_to_clear.name}: {e}")
+                    elif not member_to_clear:
+                         print(f"Could not find member {current_holder_id} to clear role.")
 
+                # Record that we've run the reset for today
+                await conn.execute("""
+                    INSERT INTO bot_state (key, value, updated_at)
+                    VALUES ('last_reset_date', $1, $2)
+                    ON CONFLICT (key) DO UPDATE SET
+                        value = $1,
+                        updated_at = $2
+                """, now_utc.strftime("%Y-%m-%d"), now_utc)
+
+                # Reset internal tracker for the new day
+                self.current_daily_hog_daddy_id = None
+                print("Daily Hog Daddy ID reset for the new day.")
+                print("--- Daily Reset Task Finished ---")
+        except Exception as e:
+            print(f"ERROR in daily_reset_task: {e}")
+            # Try to log to a channel if possible
+            try:
+                error_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+                if error_channel:
+                    await error_channel.send(f"⚠️ Error in daily reset task: {e}")
+            except:
+                pass  # Don't let error reporting cause more errors
+
+    @commands.command(name='forcereset', help='Admin only: Force a reset of the daily leaderboard and roles')
+    @commands.has_permissions(administrator=True)
+    async def force_reset(self, ctx):
+        """Admin command to manually trigger the daily reset process."""
+        await ctx.send("🔄 Forcing daily leaderboard and role reset...")
+        try:
+            # Run the reset task logic directly
+            await self.daily_reset_task()
+            await ctx.send("✅ Reset completed successfully!")
+        except Exception as e:
+            await ctx.send(f"❌ Error during reset: {e}")
+            
+    @commands.command(name='resetstatus', help='Check when the last reset occurred')
+    async def reset_status(self, ctx):
+        """Check if the daily reset has run today."""
+        db = await self._get_db()
+        async with db.acquire() as conn:
+            # Check when the last reset was run
+            last_reset = await conn.fetchval("SELECT value FROM bot_state WHERE key = 'last_reset_date'")
+            
+            if not last_reset:
+                await ctx.send("⚠️ No record of any previous reset found.")
+                return
+                
+            today_utc = datetime.now(pytz.utc).strftime("%Y-%m-%d")
+            
+            if last_reset == today_utc:
+                await ctx.send(f"✅ Daily reset has run today ({last_reset} UTC).")
             else:
-                print("No winner found for yesterday.")
-
-            # Clear role from the user who held it at midnight (might be yesterday's winner or someone else if roles weren't updated perfectly)
-            current_holder_id = self.current_daily_hog_daddy_id # Who held it at the end of the day
-            if current_holder_id and hog_role:
-                member_to_clear = guild.get_member(current_holder_id)
-                if member_to_clear and hog_role in member_to_clear.roles:
-                    try:
-                        await member_to_clear.remove_roles(hog_role, reason="Daily reset")
-                        print(f"Cleared Daily Hog Daddy role from {member_to_clear.name} for reset.")
-                    except discord.Forbidden:
-                         print(f"Failed to clear role from {member_to_clear.name}: Missing permissions.")
-                    except discord.HTTPException as e:
-                        print(f"Failed to clear role from {member_to_clear.name}: {e}")
-                elif not member_to_clear:
-                     print(f"Could not find member {current_holder_id} to clear role.")
-
-            # Reset internal tracker for the new day
-            self.current_daily_hog_daddy_id = None
-            print("Daily Hog Daddy ID reset for the new day.")
-            print("--- Daily Reset Task Finished ---")
-
-    @daily_reset_task.before_loop
-    async def before_daily_reset_task(self):
-        print('Waiting for bot to be ready before starting daily reset task...')
-        await self.bot.wait_until_ready()
-        print('Bot ready, daily reset task loop starting.')
+                await ctx.send(f"⚠️ Daily reset has not run today. Last reset was on {last_reset} UTC.")
+                
+                # Check if admin
+                if ctx.author.guild_permissions.administrator:
+                    await ctx.send("As an admin, you can use `pls forcereset` to manually trigger the reset.")
 
     @commands.command(name='pp', help='Calculates your pp size. Can be used once per hour (resets at :00). Highest roll daily wins Hog Daddy!')
     async def pp(self, ctx):
