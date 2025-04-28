@@ -100,7 +100,7 @@ class PPMinigames(commands.Cog):
 
         if pending_request['challenger'] != challenger_user.id:
             actual_challenger = ctx.guild.get_member(pending_request['challenger'])
-            actual_challenger_name = actual_challenger.mention if actual_challenger else f"User ID {pending_request['challenger']}"
+            actual_challenger_name = actual_challenger.mention if actual_challenger else f"<@{pending_request['challenger']}>"
             await ctx.send(f"{acceptor.mention}, you were challenged by {actual_challenger_name}, not {challenger_user.mention}.")
             return
 

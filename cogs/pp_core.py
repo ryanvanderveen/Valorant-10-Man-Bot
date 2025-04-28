@@ -314,7 +314,7 @@ class PPCore(commands.Cog):
                                 print(f"Cannot grant achievement, log channel {log_channel_id} not found.")
 
                     # Announce yesterday's winner
-                    announcement_channel = guild.system_channel or self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID) # Use system channel or fallback
+                    announcement_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID) # Use specific announcement channel
                     if announcement_channel:
                         try:
                             await announcement_channel.send(f"🏆 Congratulations to {winner_mention} for being yesterday's **Hog Daddy** with a top roll of **{winner_size} inches**! They have held the title {await conn.fetchval('SELECT days_as_hog_daddy FROM user_stats WHERE user_id = $1', winner_id)} times! 🏆")
@@ -357,6 +357,14 @@ class PPCore(commands.Cog):
                 # Reset internal tracker for the new day
                 self.current_daily_hog_daddy_id = None
                 print("Daily Hog Daddy ID reset for the new day.")
+                
+                # Reset the leaderboard by clearing the pp_sizes table
+                try:
+                    await conn.execute("DELETE FROM pp_sizes")
+                    print("Leaderboard reset: pp_sizes table cleared for the new day.")
+                except Exception as e:
+                    print(f"Error resetting leaderboard: {e}")
+                    
                 print("--- Daily Reset Task Finished ---")
         except Exception as e:
             print(f"ERROR in daily_reset_task: {e}")
