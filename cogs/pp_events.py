@@ -49,6 +49,7 @@ class PPEvents(commands.Cog):
         self.event_effect = 0
         self.announcement_channel = None
         self.event_task.start()
+        self.random_event_task.start()
 
     def get_current_event_effect(self):
         """Returns the current event effect if one is active"""
@@ -58,6 +59,37 @@ class PPEvents(commands.Cog):
                 'effect': self.event_effect
             }
         return None
+
+    @tasks.loop(seconds=60)
+    async def random_event_task(self):
+        """Randomly triggers global events throughout the day."""
+        # Only trigger if no event is active
+        now_utc = datetime.now(timezone.utc)
+        if self.current_event and now_utc < self.event_end_time:
+            return
+        # 1 in 60 chance every minute (~once per hour on average, but random)
+        if random.randint(1, 60) == 1:
+            event = random.choice(EVENTS)
+            self.current_event = event
+            self.event_end_time = now_utc + timedelta(hours=event['duration_hours'])
+            self.event_effect = event['effect']
+            # Find announcement channel if not already set
+            if not self.announcement_channel:
+                announcement_channel_id = 934181022659129444  # Hardcoded Channel ID
+                self.announcement_channel = self.bot.get_channel(announcement_channel_id)
+            if self.announcement_channel:
+                embed = discord.Embed(description=event['start_msg'], color=event['color'])
+                await self.announcement_channel.send(embed=embed)
+            else:
+                print("PPEvents: Announcement channel not found!")
+        # End event if expired
+        elif self.current_event and now_utc >= self.event_end_time:
+            if self.announcement_channel and self.current_event:
+                embed = discord.Embed(description=self.current_event['end_msg'], color=self.current_event['color'])
+                await self.announcement_channel.send(embed=embed)
+            self.current_event = None
+            self.event_end_time = None
+            self.event_effect = 0
 
     @tasks.loop(hours=1)
     async def event_task(self):

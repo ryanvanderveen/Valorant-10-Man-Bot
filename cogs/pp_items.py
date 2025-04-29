@@ -102,13 +102,25 @@ class PPItems(commands.Cog):
 
     @commands.command(aliases=['consume'])
     async def use(self, ctx, *, item_name: str):
-        """Uses an item from your inventory."""
+        """Uses an item from your inventory. For shrink ray, use: pls use shrink ray @targetuser"""
         user_id = ctx.author.id
-        item_name = item_name.strip()
+        args = item_name.strip().split()
+        item_name_only = item_name.strip()
+        target_member = None
+        # Detect if shrink ray and has a mention
+        if 'shrink' in args and 'ray' in args:
+            # Try to extract mention
+            if ctx.message.mentions:
+                target_member = ctx.message.mentions[0]
+                item_name_only = 'shrink ray'
+            else:
+                item_name_only = 'shrink ray'
+        else:
+            item_name_only = item_name.strip()
 
-        item = await self._get_item_by_name(item_name)
+        item = await self._get_item_by_name(item_name_only)
         if not item or not item['usable']:
-            await ctx.send(f"{ctx.author.mention}, I couldn't find a usable item named '{item_name}'. Check your spelling or `pls inventory`.")
+            await ctx.send(f"{ctx.author.mention}, I couldn't find a usable item named '{item_name_only}'. Check your spelling or `pls inventory`.")
             return
 
         item_id = item['item_id']
@@ -122,18 +134,47 @@ class PPItems(commands.Cog):
             await ctx.send(f"{ctx.author.mention}, you don't have any '{item['name']}' to use!")
             return
 
-        # Apply Effect
-        if duration_minutes > 0:  # Timed effect (e.g., pp_boost)
+        # SHRINK RAY special case: shrink another user's pp
+        if effect_type == 'shrink_ray':
+            if not target_member:
+                await ctx.send(f"{ctx.author.mention}, please mention a user to shrink their pp! Example: `pls use shrink ray @targetuser`")
+                return
+            if target_member.id == ctx.author.id:
+                await ctx.send(f"{ctx.author.mention}, you can't shrink your own pp with the shrink ray!")
+                return
+            shrink_amount = abs(effect_value) if effect_value != 0 else 1
+            shrunk, old_size, new_size = await self._shrink_user_pp(target_member.id, shrink_amount)
+            if shrunk:
+                await ctx.send(f"{ctx.author.mention} zapped {target_member.mention} with a **Shrink Ray**! Their pp shrank by {shrink_amount} inch(es)... Now {new_size} inches (was {old_size}). 😱")
+            else:
+                await ctx.send(f"{ctx.author.mention}, couldn't shrink {target_member.mention}'s pp (maybe they don't have one yet?).")
+            return
+
+        # Standard: Timed effect (e.g., pp_boost)
+        if duration_minutes > 0:
             await self._apply_active_effect(user_id, effect_type, effect_value, duration_minutes)
             await ctx.send(f"{ctx.author.mention}, you used **{item['name']}**! Its effect (`{effect_type}`: {effect_value}) will last for {duration_minutes} minutes.")
-        
-        elif effect_type == 'reroll':  # Instant effect flag
+        # Reroll
+        elif effect_type == 'reroll':
             await self._apply_active_effect(user_id, 'reroll_available', 1, 1)
             await ctx.send(f"{ctx.author.mention}, you used **{item['name']}**! You have a reroll available for your next `pls pp` command (within 1 min).")
-
-        else:  # Other effects
+        # Catch-all: Always confirm item use
+        else:
             print(f"User {user_id} used item '{item['name']}' with unhandled effect type: {effect_type}")
             await ctx.send(f"{ctx.author.mention}, you used **{item['name']}**! Its effect will be applied when relevant.")
+
+    async def _shrink_user_pp(self, user_id: int, amount: int):
+        """Shrink a user's pp by amount. Returns (True, old_size, new_size) or (False, None, None) if not found."""
+        db = await self._get_db()
+        async with db.acquire() as conn:
+            record = await conn.fetchrow("SELECT size FROM pp_sizes WHERE user_id = $1", user_id)
+            if not record:
+                return False, None, None
+            old_size = record['size']
+            new_size = max(0, old_size - amount)
+            await conn.execute("UPDATE pp_sizes SET size = $1 WHERE user_id = $2", new_size, user_id)
+            return True, old_size, new_size
+
 
 async def setup(bot):
     await bot.add_cog(PPItems(bot))
