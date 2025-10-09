@@ -18,9 +18,10 @@ class HelpCommands(commands.Cog):
 
         # PP Core
         embed.add_field(
-            name="📏 PP Core", 
-            value=f"`{prefix}pp` - Roll for your PP size (once per hour).\n"
-                  f"`{prefix}leaderboard [global]` - Show the server (or global) PP leaderboard.", 
+            name="📏 PP Core & Profile",
+            value=f"`{prefix}pp` - Roll for your PP size (resets top of the hour, highest daily wins Hog Daddy!).\n"
+                  f"`{prefix}profile [@user]` - Show your (or someone's) PP profile, stats, and achievements.\n"
+                  f"`{prefix}leaderboard` or `{prefix}lb` - Show the daily PP leaderboard (resets at midnight UTC).",
             inline=False
         )
 
