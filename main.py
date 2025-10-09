@@ -47,11 +47,12 @@ async def load_cogs():
         "pp_events",     # Event system
         "pp_items",      # Item and inventory system
         "pp_minigames",  # Mini-games (trivia, duels, pp-off)
-        "pp_profile",    # Added for profile command
-        "utility",       # Added for custom help command & other utils
+        "pp_profile",    # Profile command
+        "help_cog",      # Help command
         "info_cog",      # Bot information
-        "utility_core",  # Core utility functions (Review if still needed?)
-        "fun"           # Fun commands
+        "utility",       # Utility commands (ping)
+        "utility_core",  # Core utility functions (placeholder)
+        "fun"            # Fun commands (placeholder)
     ]
     for cog in COGS:
         try:
