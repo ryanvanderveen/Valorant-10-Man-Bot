@@ -193,16 +193,18 @@ class PPCore(commands.Cog):
 
         # Determine if this user is the new highest today
         is_new_highest = False
+        should_ensure_role = False
+
         if not current_highest: # No rolls today yet
             is_new_highest = True
         elif new_size > current_highest['size']: # Higher score
             is_new_highest = True
-        elif new_size == current_highest['size'] and current_highest['user_id'] == user.id: # Same user, same highest score
-            # No change needed unless role somehow got removed
-            pass
+        elif new_size == current_highest['size'] and current_highest['user_id'] == user.id:
+            # Same user rolled the same highest score - ensure they have the role
+            should_ensure_role = True
         # If new_size == current_highest['size'] but different user, the earlier roll wins for the day.
 
-        if is_new_highest:
+        if is_new_highest or should_ensure_role:
             print(f"New Daily Hog Daddy potential: {user.name} ({user.id}) with {new_size} inches.")
             hog_role = await self._get_hog_daddy_role(guild)
             if not hog_role:
@@ -231,24 +233,28 @@ class PPCore(commands.Cog):
                 try:
                     await user.add_roles(hog_role, reason="New Daily Hog Daddy")
                     print(f"Added '{hog_role.name}' to {user.name}")
-                    
-                    # Send announcement to both the command channel and the announcement channel
-                    await ctx.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! 👑")
-                    
-                    # Also send to the announcement channel if different from command channel
-                    announcement_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
-                    if announcement_channel and announcement_channel.id != ctx.channel.id:
-                        try:
-                            await announcement_channel.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! 👑")
-                        except Exception as e:
-                            print(f"Failed to send announcement to announcement channel: {e}")
-                            
+
+                    # Only send announcement if this is a NEW highest (not just ensuring role)
+                    if is_new_highest:
+                        # Send announcement to both the command channel and the announcement channel
+                        await ctx.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! 👑")
+
+                        # Also send to the announcement channel if different from command channel
+                        announcement_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
+                        if announcement_channel and announcement_channel.id != ctx.channel.id:
+                            try:
+                                await announcement_channel.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! 👑")
+                            except Exception as e:
+                                print(f"Failed to send announcement to announcement channel: {e}")
+
                 except discord.Forbidden:
                     print(f"Bot lacks permission to add role to {user.name}.")
-                    await ctx.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! (But I couldn't assign the role.)")
+                    if is_new_highest:
+                        await ctx.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! (But I couldn't assign the role.)")
                 except discord.HTTPException as e:
                     print(f"Failed to add role to {user.name}: {e}")
-                    await ctx.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! (But there was an error assigning the role.)")
+                    if is_new_highest:
+                        await ctx.send(f"👑 {user.mention} has taken the lead for Daily Hog Daddy with **{new_size} inches**! (But there was an error assigning the role.)")
 
     @tasks.loop(time=time(hour=DAILY_RESET_HOUR_UTC, minute=1, tzinfo=pytz.utc)) # Run daily at 00:01 UTC
     async def daily_reset_task(self):
@@ -258,10 +264,7 @@ class PPCore(commands.Cog):
         print(f"--- Running Daily Hog Daddy Reset Task ({datetime.now(pytz.utc)}) ---")
         try:
             now_utc = datetime.now(pytz.utc)
-            end_of_yesterday = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-            start_of_yesterday = end_of_yesterday - timedelta(days=1)
-
-            print(f"Checking for winner between {start_of_yesterday} and {end_of_yesterday}")
+            print(f"Checking for today's winner before resetting the leaderboard...")
 
             db = await self._get_db()
             profile_cog = self.bot.get_cog('PPProfile')
@@ -281,21 +284,20 @@ class PPCore(commands.Cog):
                 # Continue without role logic? Or stop? Let's continue for stats/achievements.
 
             async with db.acquire() as conn:
-                # Find yesterday's winner (highest score, earliest timestamp wins ties)
+                # Find TODAY's winner (before we delete the table)
+                # The table contains today's scores, and we're running at midnight
                 winner_record = await conn.fetchrow("""
-                    SELECT user_id, MAX(size) as max_size
+                    SELECT user_id, size
                     FROM pp_sizes
-                    WHERE last_roll_timestamp >= $1 AND last_roll_timestamp < $2
-                    GROUP BY user_id
-                    ORDER BY max_size DESC, MIN(last_roll_timestamp) ASC
+                    ORDER BY size DESC, last_roll_timestamp ASC
                     LIMIT 1
-                """, start_of_yesterday, end_of_yesterday)
+                """)
 
                 yesterdays_winner_member = None
                 if winner_record:
                     winner_id = winner_record['user_id']
-                    winner_size = winner_record['max_size']
-                    print(f"Yesterday's winner found: User ID {winner_id} with score {winner_size}")
+                    winner_size = winner_record['size']
+                    print(f"Today's winner found: User ID {winner_id} with score {winner_size}")
                     
                     yesterdays_winner_member = guild.get_member(winner_id)
                     winner_mention = f"<@{winner_id}>" 
@@ -324,11 +326,12 @@ class PPCore(commands.Cog):
                             else:
                                 print(f"Cannot grant achievement, log channel {log_channel_id} not found.")
 
-                    # Announce yesterday's winner
+                    # Announce today's winner
                     announcement_channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID) # Use specific announcement channel
                     if announcement_channel:
                         try:
-                            await announcement_channel.send(f"🏆 Congratulations to {winner_mention} for being yesterday's **Hog Daddy** with a top roll of **{winner_size} inches**! They have held the title {await conn.fetchval('SELECT days_as_hog_daddy FROM user_stats WHERE user_id = $1', winner_id)} times! 🏆")
+                            days_count = await conn.fetchval('SELECT days_as_hog_daddy FROM user_stats WHERE user_id = $1', winner_id)
+                            await announcement_channel.send(f"🏆 Congratulations to {winner_mention} for being today's **Hog Daddy** with a top roll of **{winner_size} inches**! They have held the title {days_count} times! 🏆")
                         except discord.Forbidden:
                              print(f"Failed to send announcement to {announcement_channel.name}: Missing permissions.")
                         except Exception as e:
@@ -339,7 +342,7 @@ class PPCore(commands.Cog):
                     # --- End of DB transaction ---
 
                 else:
-                    print("No winner found for yesterday.")
+                    print("No winner found for today (no one rolled).")
 
                 # Clear role from the user who held it at midnight (might be yesterday's winner or someone else if roles weren't updated perfectly)
                 current_holder_id = self.current_daily_hog_daddy_id # Who held it at the end of the day
@@ -463,9 +466,30 @@ class PPCore(commands.Cog):
                 return
 
         base_size = random.choices(list(range(21)), weights=[1, 2, 3, 5, 7, 10, 15, 18, 20, 25, 30, 30, 25, 20, 15, 10, 7, 5, 3, 2, 1], k=1)[0]
-        final_size = base_size # Apply effects later if needed
+        final_size = base_size
+
+        # Apply event effects if any
+        event_cog = self.bot.get_cog('PPEvents')
+        if event_cog:
+            event_effect = event_cog.get_current_event_effect()
+            if event_effect:
+                final_size += event_effect['effect']
+                print(f"Applied event effect '{event_effect['name']}': {event_effect['effect']} to user {user_id}")
+
+        # Apply active item effects from database
+        async with db.acquire() as conn:
+            active_boost = await conn.fetchrow("""
+                SELECT effect_value FROM user_active_effects
+                WHERE user_id = $1 AND effect_type = 'pp_boost' AND end_time > NOW()
+            """, user_id)
+
+            if active_boost:
+                boost_value = active_boost['effect_value']
+                final_size += boost_value
+                print(f"Applied item boost effect: {boost_value} to user {user_id}")
+
         final_size = max(0, min(20, final_size)) # Clamp result
-        
+
         # Update database (pp_sizes and user_stats)
         async with db.acquire() as conn:
             async with conn.transaction():
@@ -495,31 +519,44 @@ class PPCore(commands.Cog):
             elif final_size == 20 and stats and stats['twenty_rolls'] == 1:
                 await profile_cog._grant_achievement(user, 'roll_a_twenty', ctx)
 
+        # Record score for PP Off if active
+        minigames_cog = self.bot.get_cog('PPMinigames')
+        if minigames_cog and minigames_cog.is_pp_off_active(ctx.channel.id):
+            minigames_cog.record_pp_off_score(user_id, final_size)
+
         # Generate the visual and text measurement
         visual_pp = f"8{'=' * final_size}D" if final_size > 0 else "8D (Micro)" # Handle zero case nicely
         measurement = f"{visual_pp} ({final_size} inches)"
-        await ctx.send(f"{user.mention}'s pp is {measurement}")
+
+        # Add event notification if one is active
+        event_text = ""
+        if event_cog:
+            event_effect = event_cog.get_current_event_effect()
+            if event_effect:
+                event_text = f" [{event_effect['name']} active!]"
+
+        await ctx.send(f"{user.mention}'s pp is {measurement}{event_text}")
 
         if ctx.guild: # Ensure it's in a guild context
             await self._update_daily_hog_daddy(ctx, user, final_size)
         else:
             print("Cannot update Daily Hog Daddy outside of a guild.")
 
-    @commands.command(name='leaderboard', aliases=['lb'], help='Shows the overall PP leaderboard')
+    @commands.command(name='leaderboard', aliases=['lb'], help='Shows the daily PP leaderboard')
     async def leaderboard(self, ctx):
         db = await self._get_db()
         async with db.acquire() as conn:
             top_users = await conn.fetch("""
-                SELECT user_id, size, last_roll_timestamp FROM pp_sizes 
+                SELECT user_id, size, last_roll_timestamp FROM pp_sizes
                 ORDER BY size DESC, last_roll_timestamp ASC
                 LIMIT 100 -- Limit to a reasonable number for pagination
             """)
 
         if not top_users:
-            await ctx.send("The leaderboard is empty!")
+            await ctx.send("The leaderboard is empty! No one has rolled today yet.")
             return
 
-        view = LeaderboardView(top_users, title="PP Leaderboard (Overall Top Rolls)", sep=10)
+        view = LeaderboardView(top_users, title="🏆 Daily PP Leaderboard (Resets Daily at Midnight UTC)", sep=10)
         initial_embed = await view.create_leaderboard_embed(top_users[:10], ctx.guild)
         await ctx.send(embed=initial_embed, view=view)
 

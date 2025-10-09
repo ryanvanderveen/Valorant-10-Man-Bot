@@ -30,7 +30,7 @@ class PPDB(commands.Cog):
                     CREATE TABLE IF NOT EXISTS pp_sizes (
                         user_id BIGINT PRIMARY KEY,
                         size INTEGER,
-                        last_used TIMESTAMP DEFAULT NULL
+                        last_roll_timestamp TIMESTAMP WITH TIME ZONE DEFAULT NULL
                     )
                 """)
                 print(" Table 'pp_sizes' checked/created.")
@@ -73,13 +73,69 @@ class PPDB(commands.Cog):
                 """)
                 print(" Table 'user_active_effects' checked/created.")
 
+                # Ensure user_stats table exists
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_stats (
+                        user_id BIGINT PRIMARY KEY,
+                        total_rolls INTEGER DEFAULT 0,
+                        zero_rolls INTEGER DEFAULT 0,
+                        twenty_rolls INTEGER DEFAULT 0,
+                        duel_wins INTEGER DEFAULT 0,
+                        trivia_wins INTEGER DEFAULT 0,
+                        days_as_hog_daddy INTEGER DEFAULT 0
+                    )
+                """)
+                print(" Table 'user_stats' checked/created.")
+
+                # Ensure achievements table exists
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS achievements (
+                        achievement_id VARCHAR(50) PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        description VARCHAR(255),
+                        reward_role_name VARCHAR(100)
+                    )
+                """)
+                print(" Table 'achievements' checked/created.")
+
+                # Ensure user_achievements table exists
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_achievements (
+                        user_id BIGINT NOT NULL,
+                        achievement_id VARCHAR(50) NOT NULL,
+                        earned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        PRIMARY KEY (user_id, achievement_id),
+                        FOREIGN KEY (achievement_id) REFERENCES achievements(achievement_id) ON DELETE CASCADE
+                    )
+                """)
+                print(" Table 'user_achievements' checked/created.")
+
+                # Populate achievements table if empty
+                achievement_count = await conn.fetchval("SELECT COUNT(*) FROM achievements")
+                if achievement_count == 0:
+                    print(" Populating 'achievements' table with initial data...")
+                    initial_achievements = [
+                        ('roll_a_zero', 'Micro PP', 'Rolled a 0 for the first time', None),
+                        ('roll_a_twenty', 'Maximum PP', 'Rolled a 20 for the first time', None),
+                        ('became_hog_daddy', 'Hog Daddy', 'Became the Daily Hog Daddy', None),
+                        ('first_duel_win', 'Duelist', 'Won your first PP duel', None),
+                        ('ten_duel_wins', 'Duel Master', 'Won 10 PP duels', None),
+                        ('first_win_trivia', 'Trivia Novice', 'Won your first trivia game', None),
+                        ('ten_wins_trivia', 'Trivia Master', 'Won 10 trivia games', None),
+                    ]
+                    await conn.executemany("""
+                        INSERT INTO achievements (achievement_id, name, description, reward_role_name)
+                        VALUES ($1, $2, $3, $4)
+                    """, initial_achievements)
+                    print(f" Added {len(initial_achievements)} initial achievements.")
+
                 # Populate items table if empty
                 item_count = await conn.fetchval("SELECT COUNT(*) FROM items")
                 if item_count == 0:
                     print(" Populating 'items' table with initial data...")
                     initial_items = [
                         ('Growth Potion', 'Temporarily increases your next pp roll.', 'pp_boost', 2, 60, True),
-                        ('Shrink Ray', 'Temporarily decreases your next pp roll. Risky!', 'pp_boost', -2, 60, True),
+                        ('Shrink Ray', 'Zap another user to shrink their pp by 2 inches! Use: pls use shrink ray @user', 'shrink_ray', -2, 0, True),
                         ('Lucky Socks', 'Slightly increases chance of a larger roll next time.', 'luck_boost', 1, 0, True),
                         ('Reroll Token', 'Grants one reroll on your next pp command.', 'reroll', 1, 0, True),
                     ]
