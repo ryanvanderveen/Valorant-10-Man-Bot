@@ -490,7 +490,8 @@ class PPCore(commands.Cog):
 
         final_size = max(0, min(20, final_size)) # Clamp result
 
-        # Update database (pp_sizes and user_stats)
+        # Update database (pp_sizes, user_stats, and pp_coins)
+        stats = None
         async with db.acquire() as conn:
             async with conn.transaction():
                 # Update pp_sizes with new size and timestamp
@@ -518,7 +519,7 @@ class PPCore(commands.Cog):
                     INSERT INTO user_data (user_id, pp_coins) VALUES ($1, $2)
                     ON CONFLICT (user_id) DO UPDATE SET pp_coins = user_data.pp_coins + $2
                 """, user_id, final_size)
-                print(f"Awarded {final_size} PP coins to user {user_id}")
+                print(f"[PP Core] Awarded {final_size} PP coins to user {user_id}")
 
         if profile_cog:
             if final_size == 0 and stats and stats['zero_rolls'] == 1:

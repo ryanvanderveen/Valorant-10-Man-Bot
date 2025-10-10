@@ -467,9 +467,10 @@ class PPMinigames(commands.Cog):
 
             # Deduct bet from their balance
             await conn.execute("""
-                INSERT INTO user_data (user_id, pp_coins) VALUES ($1, $2)
+                INSERT INTO user_data (user_id, pp_coins) VALUES ($1, -$2)
                 ON CONFLICT (user_id) DO UPDATE SET pp_coins = user_data.pp_coins - $2
             """, player.id, bet)
+            print(f"[Blackjack] Deducted {bet} PP coins from user {player.id}")
 
         # Create new game
         deck = self._create_deck()
@@ -853,6 +854,7 @@ class PPMinigames(commands.Cog):
                     INSERT INTO user_data (user_id, pp_coins) VALUES ($1, $2)
                     ON CONFLICT (user_id) DO UPDATE SET pp_coins = user_data.pp_coins + $2
                 """, player.id, winnings)
+                print(f"[Blackjack] Awarded {winnings} PP coins to user {player.id}")
 
         # Clean up and show result
         del self.active_blackjack_games[player.id]
@@ -872,6 +874,7 @@ class PPMinigames(commands.Cog):
                         INSERT INTO user_data (user_id, pp_coins) VALUES ($1, $2)
                         ON CONFLICT (user_id) DO UPDATE SET pp_coins = user_data.pp_coins + $2
                     """, winner.id, coin_reward)
+                    print(f"[Game Reward] Awarded {coin_reward} PP coins to user {winner.id}")
 
                     # Get all available items
                     items = await conn.fetch("SELECT item_id, name FROM items")
@@ -1093,6 +1096,7 @@ class PPMinigames(commands.Cog):
                             INSERT INTO user_data (user_id, pp_coins) VALUES ($1, $2)
                             ON CONFLICT (user_id) DO UPDATE SET pp_coins = user_data.pp_coins + $2
                         """, winner.id, coin_reward)
+                        print(f"[Trivia Reward] Awarded {coin_reward} PP coins to user {winner.id}")
 
                         # 4. Give Item Reward (Existing Logic)
                         # Get all available items

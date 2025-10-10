@@ -52,6 +52,8 @@ class PPProfile(commands.Cog):
             pp_record = await conn.fetchrow("SELECT size, last_roll_timestamp FROM pp_sizes WHERE user_id = $1", user_id)
             # Fetch Stats
             stats_record = await conn.fetchrow("SELECT * FROM user_stats WHERE user_id = $1", user_id)
+            # Fetch PP Coins
+            coins_record = await conn.fetchrow("SELECT pp_coins FROM user_data WHERE user_id = $1", user_id)
             # Fetch Achievements
             achievements_earned = await conn.fetch("""
                 SELECT a.name, a.description FROM user_achievements ua
@@ -61,6 +63,10 @@ class PPProfile(commands.Cog):
 
         embed = discord.Embed(title=f"{member.display_name}'s Profile", color=member.color)
         embed.set_thumbnail(url=member.display_avatar.url)
+
+        # PP Coins
+        pp_coins = coins_record['pp_coins'] if coins_record else 0
+        embed.add_field(name="💰 PP Coins", value=f"{pp_coins}", inline=True)
 
         # PP Info
         if pp_record:
