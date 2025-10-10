@@ -474,7 +474,7 @@ class PPMinigames(commands.Cog):
 
             # Deduct bet from their balance
             await conn.execute("""
-                INSERT INTO user_data (user_id, pp_coins) VALUES ($1, -$2)
+                INSERT INTO user_data (user_id, pp_coins) VALUES ($1, 0)
                 ON CONFLICT (user_id) DO UPDATE SET pp_coins = user_data.pp_coins - $2
             """, player.id, bet)
             print(f"[Blackjack] Deducted {bet} PP coins from user {player.id}")
