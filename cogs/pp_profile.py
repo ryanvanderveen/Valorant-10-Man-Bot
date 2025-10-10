@@ -39,11 +39,30 @@ class PPProfile(commands.Cog):
                     raise ConnectionError("Database pool is not initialized in PPProfile.")
         return self.db_pool
 
+    @commands.command(name='coins', aliases=['balance', 'bal'], help='Check your PP coin balance.')
+    async def coins(self, ctx, member: discord.Member = None):
+        """Check your or someone else's PP coin balance"""
+        if member is None:
+            member = ctx.author
+
+        user_id = member.id
+        db = await self._get_db()
+
+        async with db.acquire() as conn:
+            coins_record = await conn.fetchrow("SELECT pp_coins FROM user_data WHERE user_id = $1", user_id)
+
+        pp_coins = coins_record['pp_coins'] if coins_record else 0
+
+        if member == ctx.author:
+            await ctx.send(f"💰 You have **{pp_coins} PP coins**!")
+        else:
+            await ctx.send(f"💰 {member.display_name} has **{pp_coins} PP coins**!")
+
     @commands.command(name='profile', aliases=['prof'], help='Shows your PP profile and stats.')
     async def profile(self, ctx, *, member: discord.Member = None):
         if member is None:
             member = ctx.author
-        
+
         user_id = member.id
         db = await self._get_db()
 
