@@ -503,7 +503,7 @@ class PPCore(commands.Cog):
 
                 zero_increment = 1 if final_size == 0 else 0
                 twenty_increment = 1 if final_size == 20 else 0
-                stats = await conn.fetchrow(""" 
+                stats = await conn.fetchrow("""
                     INSERT INTO user_stats (user_id, total_rolls, zero_rolls, twenty_rolls)
                     VALUES ($1, 1, $2, $3)
                     ON CONFLICT (user_id) DO UPDATE SET
@@ -512,6 +512,13 @@ class PPCore(commands.Cog):
                         twenty_rolls = user_stats.twenty_rolls + $3
                     RETURNING zero_rolls, twenty_rolls
                 """, user_id, zero_increment, twenty_increment)
+
+                # Award PP coins equal to the roll size (1 inch = 1 coin)
+                await conn.execute("""
+                    INSERT INTO user_data (user_id, pp_coins) VALUES ($1, $2)
+                    ON CONFLICT (user_id) DO UPDATE SET pp_coins = user_data.pp_coins + $2
+                """, user_id, final_size)
+                print(f"Awarded {final_size} PP coins to user {user_id}")
 
         if profile_cog:
             if final_size == 0 and stats and stats['zero_rolls'] == 1:

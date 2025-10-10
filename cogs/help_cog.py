@@ -19,7 +19,7 @@ class HelpCommands(commands.Cog):
         # PP Core
         embed.add_field(
             name="📏 PP Core & Profile",
-            value=f"`{prefix}pp` - Roll for your PP size (resets top of the hour, highest daily wins Hog Daddy!).\n"
+            value=f"`{prefix}pp` - Roll for your PP size (resets top of the hour, highest daily wins Hog Daddy!). **Earn coins = your roll size!**\n"
                   f"`{prefix}profile [@user]` - Show your (or someone's) PP profile, stats, and achievements.\n"
                   f"`{prefix}leaderboard` or `{prefix}lb` - Show the daily PP leaderboard (resets at midnight UTC).",
             inline=False
@@ -36,10 +36,13 @@ class HelpCommands(commands.Cog):
         # Mini-Games
         embed.add_field(
             name="🎮 Mini-Games",
-            value=f"`{prefix}trivia` - Answer a trivia question (A-D) to win items!\n"
-                  f"`{prefix}scramble` - Unscramble a word to win an item!\n"
-                  f"`{prefix}highlow` - Guess if the next number is higher or lower!\n"
-                  f"`{prefix}mathrush` - Solve a quick math problem to win!\n"
+            value=f"`{prefix}trivia` - Answer a trivia question (A-D) to win items + 10 coins!\n"
+                  f"`{prefix}scramble` - Unscramble a word to win an item + 10 coins!\n"
+                  f"`{prefix}highlow` - Guess if the next number is higher or lower! Win 10 coins!\n"
+                  f"`{prefix}mathrush` - Solve a quick math problem to win 10 coins!\n"
+                  f"`{prefix}blackjack [bet]` - Play blackjack! Bet ANY amount of PP coins (default: 10). 🎰\n"
+                  f"`{prefix}hit` - Draw another card in blackjack.\n"
+                  f"`{prefix}stand` - Hold your hand in blackjack.\n"
                   f"`{prefix}wyr` - Answer a fun 'Would You Rather' question!\n"
                   f"`{prefix}duel <@user>` - Challenge another user to a PP duel.\n"
                   f"`{prefix}accept <@user>` - Accept a pending duel challenge.\n"

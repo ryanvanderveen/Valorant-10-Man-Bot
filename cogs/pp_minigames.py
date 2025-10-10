@@ -37,6 +37,9 @@ class PPMinigames(commands.Cog):
         self.current_math = None
         self.math_timeout = 10
 
+        # Blackjack State
+        self.active_blackjack_games = {}  # user_id: game_data
+
     async def _get_db(self):
         """Get database pool from PPDB cog"""
         db_cog = self.bot.get_cog('PPDB')
@@ -436,6 +439,123 @@ class PPMinigames(commands.Cog):
         await msg.add_reaction("🅰️")
         await msg.add_reaction("🅱️")
 
+    @commands.command()
+    @commands.guild_only()
+    async def blackjack(self, ctx, bet: int = 10):
+        """Start a blackjack game! Bet PP coins to win big!"""
+        player = ctx.author
+
+        # Check if already in a game
+        if player.id in self.active_blackjack_games:
+            await ctx.send(f"{player.mention}, you're already in a blackjack game! Use `pls hit` or `pls stand`.")
+            return
+
+        # Validate bet amount
+        if bet <= 0:
+            await ctx.send(f"{player.mention}, you need to bet at least 1 PP coin!")
+            return
+
+        # Check if player has enough coins
+        db = await self._get_db()
+        async with db.acquire() as conn:
+            user_data = await conn.fetchrow("SELECT pp_coins FROM user_data WHERE user_id = $1", player.id)
+            current_coins = user_data['pp_coins'] if user_data else 0
+
+            if current_coins < bet:
+                await ctx.send(f"{player.mention}, you only have **{current_coins}** PP coins! You can't bet {bet}.")
+                return
+
+            # Deduct bet from their balance
+            await conn.execute("""
+                INSERT INTO user_data (user_id, pp_coins) VALUES ($1, $2)
+                ON CONFLICT (user_id) DO UPDATE SET pp_coins = user_data.pp_coins - $2
+            """, player.id, bet)
+
+        # Create new game
+        deck = self._create_deck()
+        random.shuffle(deck)
+
+        player_hand = [deck.pop(), deck.pop()]
+        dealer_hand = [deck.pop(), deck.pop()]
+
+        game_data = {
+            'bet': bet,
+            'deck': deck,
+            'player_hand': player_hand,
+            'dealer_hand': dealer_hand,
+            'channel': ctx.channel
+        }
+
+        self.active_blackjack_games[player.id] = game_data
+
+        # Check for natural blackjack
+        player_value = self._calculate_hand(player_hand)
+        dealer_value = self._calculate_hand(dealer_hand)
+
+        if player_value == 21:
+            await self._end_blackjack_game(player, ctx, "blackjack")
+            return
+
+        # Show initial hands
+        embed = self._create_blackjack_embed(player, game_data, show_dealer_card=False)
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.guild_only()
+    async def hit(self, ctx):
+        """Draw another card in your blackjack game"""
+        player = ctx.author
+
+        if player.id not in self.active_blackjack_games:
+            await ctx.send(f"{player.mention}, you're not in a blackjack game! Start one with `pls blackjack <bet>`.")
+            return
+
+        game_data = self.active_blackjack_games[player.id]
+
+        # Check if in correct channel
+        if ctx.channel.id != game_data['channel'].id:
+            await ctx.send(f"{player.mention}, your blackjack game is in {game_data['channel'].mention}!")
+            return
+
+        # Deal a card
+        card = game_data['deck'].pop()
+        game_data['player_hand'].append(card)
+
+        player_value = self._calculate_hand(game_data['player_hand'])
+
+        # Check for bust
+        if player_value > 21:
+            await self._end_blackjack_game(player, ctx, "bust")
+            return
+
+        # Check for 21
+        if player_value == 21:
+            await self._end_blackjack_game(player, ctx, "stand")
+            return
+
+        # Show updated hand
+        embed = self._create_blackjack_embed(player, game_data, show_dealer_card=False)
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.guild_only()
+    async def stand(self, ctx):
+        """Stand with your current hand in blackjack"""
+        player = ctx.author
+
+        if player.id not in self.active_blackjack_games:
+            await ctx.send(f"{player.mention}, you're not in a blackjack game! Start one with `pls blackjack <bet>`.")
+            return
+
+        game_data = self.active_blackjack_games[player.id]
+
+        # Check if in correct channel
+        if ctx.channel.id != game_data['channel'].id:
+            await ctx.send(f"{player.mention}, your blackjack game is in {game_data['channel'].mention}!")
+            return
+
+        await self._end_blackjack_game(player, ctx, "stand")
+
     @commands.command(name="ppoff")
     @commands.guild_only()
     async def ppoff(self, ctx, duration_minutes: int = 1):
@@ -584,54 +704,218 @@ class PPMinigames(commands.Cog):
             except (discord.NotFound, discord.Forbidden) as e:
                 print(f"Error sending math timeout message: {e}")
 
-    async def _award_game_item(self, winner, message, success_message: str):
-        """Awards a random item to a game winner (used for scramble, highlow, mathrush)"""
+    def _create_deck(self):
+        """Create a standard 52-card deck"""
+        suits = ['♠', '♥', '♦', '♣']
+        ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+        deck = []
+        for suit in suits:
+            for rank in ranks:
+                deck.append(f"{rank}{suit}")
+        return deck
+
+    def _calculate_hand(self, hand):
+        """Calculate the value of a blackjack hand"""
+        value = 0
+        aces = 0
+
+        for card in hand:
+            rank = card[:-1]  # Remove suit
+            if rank in ['J', 'Q', 'K']:
+                value += 10
+            elif rank == 'A':
+                aces += 1
+                value += 11
+            else:
+                value += int(rank)
+
+        # Adjust for aces
+        while value > 21 and aces > 0:
+            value -= 10
+            aces -= 1
+
+        return value
+
+    def _format_hand(self, hand, hide_second=False):
+        """Format a hand for display"""
+        if hide_second and len(hand) > 1:
+            return f"{hand[0]} 🂠"
+        return " ".join(hand)
+
+    def _create_blackjack_embed(self, player, game_data, show_dealer_card=False, result=None):
+        """Create an embed showing the blackjack game state"""
+        player_hand = game_data['player_hand']
+        dealer_hand = game_data['dealer_hand']
+        bet = game_data['bet']
+
+        player_value = self._calculate_hand(player_hand)
+        dealer_value = self._calculate_hand(dealer_hand) if show_dealer_card else self._calculate_hand([dealer_hand[0]])
+
+        # Choose color based on result
+        if result == "win" or result == "blackjack":
+            color = discord.Color.green()
+        elif result == "lose" or result == "bust":
+            color = discord.Color.red()
+        elif result == "push":
+            color = discord.Color.yellow()
+        else:
+            color = discord.Color.blue()
+
+        embed = discord.Embed(
+            title="🃏 Blackjack",
+            color=color
+        )
+
+        # Dealer's hand
+        dealer_display = self._format_hand(dealer_hand, hide_second=not show_dealer_card)
+        if show_dealer_card:
+            embed.add_field(name=f"Dealer's Hand ({dealer_value})", value=dealer_display, inline=False)
+        else:
+            embed.add_field(name="Dealer's Hand", value=dealer_display, inline=False)
+
+        # Player's hand
+        player_display = self._format_hand(player_hand)
+        embed.add_field(name=f"{player.display_name}'s Hand ({player_value})", value=player_display, inline=False)
+
+        # Show bet
+        embed.add_field(name="Bet", value=f"{bet} PP coins", inline=True)
+
+        # Show result if game is over
+        if result:
+            if result == "win":
+                embed.add_field(name="Result", value=f"🎉 You win {bet * 2} PP coins!", inline=False)
+            elif result == "blackjack":
+                embed.add_field(name="Result", value=f"🎰 BLACKJACK! You win {int(bet * 2.5)} PP coins!", inline=False)
+            elif result == "lose":
+                embed.add_field(name="Result", value=f"💔 Dealer wins! You lost {bet} PP coins.", inline=False)
+            elif result == "bust":
+                embed.add_field(name="Result", value=f"💥 BUST! You lost {bet} PP coins.", inline=False)
+            elif result == "push":
+                embed.add_field(name="Result", value=f"🤝 Push! Your {bet} PP coins have been returned.", inline=False)
+        else:
+            embed.set_footer(text="Use 'pls hit' to draw a card or 'pls stand' to hold")
+
+        return embed
+
+    async def _end_blackjack_game(self, player, ctx, action):
+        """End a blackjack game and determine winner"""
+        game_data = self.active_blackjack_games[player.id]
+        bet = game_data['bet']
+        player_hand = game_data['player_hand']
+        dealer_hand = game_data['dealer_hand']
+
+        player_value = self._calculate_hand(player_hand)
+
+        # Handle bust
+        if action == "bust":
+            del self.active_blackjack_games[player.id]
+            embed = self._create_blackjack_embed(player, game_data, show_dealer_card=True, result="bust")
+            await ctx.send(embed=embed)
+            return
+
+        # Handle blackjack
+        if action == "blackjack":
+            dealer_value = self._calculate_hand(dealer_hand)
+            if dealer_value == 21:
+                # Push
+                result = "push"
+                winnings = bet
+            else:
+                # Blackjack pays 2.5x
+                result = "blackjack"
+                winnings = int(bet * 2.5)
+        else:
+            # Dealer plays
+            while self._calculate_hand(dealer_hand) < 17:
+                dealer_hand.append(game_data['deck'].pop())
+
+            dealer_value = self._calculate_hand(dealer_hand)
+
+            # Determine winner
+            if dealer_value > 21:
+                result = "win"
+                winnings = bet * 2
+            elif dealer_value > player_value:
+                result = "lose"
+                winnings = 0
+            elif dealer_value < player_value:
+                result = "win"
+                winnings = bet * 2
+            else:
+                result = "push"
+                winnings = bet
+
+        # Award winnings
         db = await self._get_db()
+        async with db.acquire() as conn:
+            if winnings > 0:
+                await conn.execute("""
+                    INSERT INTO user_data (user_id, pp_coins) VALUES ($1, $2)
+                    ON CONFLICT (user_id) DO UPDATE SET pp_coins = user_data.pp_coins + $2
+                """, player.id, winnings)
+
+        # Clean up and show result
+        del self.active_blackjack_games[player.id]
+        embed = self._create_blackjack_embed(player, game_data, show_dealer_card=True, result=result)
+        await ctx.send(embed=embed)
+
+    async def _award_game_item(self, winner, message, success_message: str):
+        """Awards a random item AND PP coins to a game winner (used for scramble, highlow, mathrush)"""
+        db = await self._get_db()
+        coin_reward = 10  # Award 10 PP coins per game win
+
         try:
             async with db.acquire() as conn:
-                # Get all available items
-                items = await conn.fetch("SELECT item_id, name FROM items")
-                if not items:
-                    await message.channel.send(f"{success_message} (No items available to award)")
-                    return
+                async with conn.transaction():
+                    # Award PP coins
+                    await conn.execute("""
+                        INSERT INTO user_data (user_id, pp_coins) VALUES ($1, $2)
+                        ON CONFLICT (user_id) DO UPDATE SET pp_coins = user_data.pp_coins + $2
+                    """, winner.id, coin_reward)
 
-                # Define item rarities (same as trivia)
-                item_weights = {
-                    1: 40,  # Growth Potion - common
-                    2: 30,  # Shrink Ray - uncommon
-                    3: 20,  # Lucky Socks - rare
-                    4: 10   # Reroll Token - very rare
-                }
+                    # Get all available items
+                    items = await conn.fetch("SELECT item_id, name FROM items")
+                    if not items:
+                        await message.channel.send(f"{success_message} You earned **{coin_reward} PP coins**! (No items available)")
+                        return
 
-                # Choose random item based on weights
-                item_ids = [item['item_id'] for item in items]
-                weights = [item_weights.get(item_id, 25) for item_id in item_ids]
-                chosen_item_id = random.choices(item_ids, weights=weights, k=1)[0]
-                chosen_item = next(item for item in items if item['item_id'] == chosen_item_id)
+                    # Define item rarities (same as trivia)
+                    item_weights = {
+                        1: 40,  # Growth Potion - common
+                        2: 30,  # Shrink Ray - uncommon
+                        3: 20,  # Lucky Socks - rare
+                        4: 10   # Reroll Token - very rare
+                    }
 
-                # Add item to inventory
-                await conn.execute("""
-                    INSERT INTO user_inventory (user_id, item_id, quantity)
-                    VALUES ($1, $2, 1)
-                    ON CONFLICT (user_id, item_id)
-                    DO UPDATE SET quantity = user_inventory.quantity + 1
-                """, winner.id, chosen_item_id)
+                    # Choose random item based on weights
+                    item_ids = [item['item_id'] for item in items]
+                    weights = [item_weights.get(item_id, 25) for item_id in item_ids]
+                    chosen_item_id = random.choices(item_ids, weights=weights, k=1)[0]
+                    chosen_item = next(item for item in items if item['item_id'] == chosen_item_id)
 
-                # Get rarity text
-                weight = item_weights.get(chosen_item_id, 25)
-                if weight <= 10:
-                    rarity_text = "🌟 VERY RARE 🌟"
-                elif weight <= 20:
-                    rarity_text = "✨ RARE ✨"
-                elif weight <= 30:
-                    rarity_text = "🔹 UNCOMMON 🔹"
-                else:
-                    rarity_text = "COMMON"
+                    # Add item to inventory
+                    await conn.execute("""
+                        INSERT INTO user_inventory (user_id, item_id, quantity)
+                        VALUES ($1, $2, 1)
+                        ON CONFLICT (user_id, item_id)
+                        DO UPDATE SET quantity = user_inventory.quantity + 1
+                    """, winner.id, chosen_item_id)
 
-                await message.channel.send(f"{success_message} You won a **{chosen_item['name']}**! ({rarity_text})")
+                    # Get rarity text
+                    weight = item_weights.get(chosen_item_id, 25)
+                    if weight <= 10:
+                        rarity_text = "🌟 VERY RARE 🌟"
+                    elif weight <= 20:
+                        rarity_text = "✨ RARE ✨"
+                    elif weight <= 30:
+                        rarity_text = "🔹 UNCOMMON 🔹"
+                    else:
+                        rarity_text = "COMMON"
+
+                    await message.channel.send(f"{success_message} You won a **{chosen_item['name']}** ({rarity_text}) and **{coin_reward} PP coins**! 💰")
         except Exception as e:
             print(f"Error awarding game item: {e}")
-            await message.channel.send(f"{success_message} (Error giving item reward)")
+            await message.channel.send(f"{success_message} (Error giving rewards)")
 
     async def _schedule_ppoff_end(self, delay_seconds: int):
         """Waits for the duration then triggers PP Off results calculation."""
@@ -803,12 +1087,19 @@ class PPMinigames(commands.Cog):
                             if new_trivia_wins == 10:
                                 await profile_cog._grant_achievement(winner, 'ten_wins_trivia', ctx)
 
-                        # 3. Give Item Reward (Existing Logic)
+                        # 3. Award PP coins
+                        coin_reward = 10
+                        await conn.execute("""
+                            INSERT INTO user_data (user_id, pp_coins) VALUES ($1, $2)
+                            ON CONFLICT (user_id) DO UPDATE SET pp_coins = user_data.pp_coins + $2
+                        """, winner.id, coin_reward)
+
+                        # 4. Give Item Reward (Existing Logic)
                         # Get all available items
                         items = await conn.fetch("SELECT item_id, name FROM items")
                         if not items:
                             raise ValueError("No items found in database")
-                        
+
                         # Define item rarities (item_id: weight)
                         # Lower weight = more rare
                         item_weights = {
@@ -817,15 +1108,15 @@ class PPMinigames(commands.Cog):
                             3: 20,  # Lucky Socks - rare
                             4: 10   # Reroll Token - very rare
                         }
-                        
+
                         # Get all item IDs and their corresponding weights
                         item_ids = [item['item_id'] for item in items]
                         weights = [item_weights.get(item_id, 25) for item_id in item_ids]  # Default weight 25 for any new items
-                        
+
                         # Choose a random item based on weights
                         chosen_item_id = random.choices(item_ids, weights=weights, k=1)[0]
                         chosen_item = next(item for item in items if item['item_id'] == chosen_item_id)
-                        
+
                         # Add the item to the user's inventory
                         await conn.execute("""
                             INSERT INTO user_inventory (user_id, item_id, quantity)
@@ -833,7 +1124,7 @@ class PPMinigames(commands.Cog):
                             ON CONFLICT (user_id, item_id)
                             DO UPDATE SET quantity = user_inventory.quantity + 1
                         """, winner.id, chosen_item_id)
-                        
+
                         # Get rarity text based on weight
                         weight = item_weights.get(chosen_item_id, 25)
                         if weight <= 10:
@@ -844,10 +1135,10 @@ class PPMinigames(commands.Cog):
                             rarity_text = "🔹 UNCOMMON 🔹"
                         else:
                             rarity_text = "COMMON"
-                        
+
                         await message.channel.send(
                             f"🎉 Correct, {winner.mention}! The answer was **{correct_answer}**. "
-                            f"You won a **{chosen_item['name']}**! ({rarity_text}) 🎉"
+                            f"You won a **{chosen_item['name']}** ({rarity_text}) and **{coin_reward} PP coins**! 💰"
                         )
             except Exception as e:
                 print(f"Error giving trivia reward: {e}")
