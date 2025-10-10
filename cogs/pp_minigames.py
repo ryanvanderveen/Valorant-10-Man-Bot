@@ -441,13 +441,13 @@ class PPMinigames(commands.Cog):
 
     @commands.command(name='blackjack', aliases=['bj'])
     @commands.guild_only()
-    async def blackjack(self, ctx, bet: str = "10"):
+    async def blackjack(self, ctx, *, bet_amount: str = "10"):
         """Start a blackjack game! Bet PP coins to win big!"""
         player = ctx.author
 
         # Convert bet to int manually with error handling
         try:
-            bet = int(bet)
+            bet = int(bet_amount.strip())
         except ValueError:
             await ctx.send(f"{player.mention}, please enter a valid number! Example: `pls blackjack 50`")
             return
