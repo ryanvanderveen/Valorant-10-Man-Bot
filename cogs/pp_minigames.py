@@ -439,11 +439,18 @@ class PPMinigames(commands.Cog):
         await msg.add_reaction("🅰️")
         await msg.add_reaction("🅱️")
 
-    @commands.command()
+    @commands.command(name='blackjack', aliases=['bj'])
     @commands.guild_only()
-    async def blackjack(self, ctx, bet: int = 10):
+    async def blackjack(self, ctx, bet: str = "10"):
         """Start a blackjack game! Bet PP coins to win big!"""
         player = ctx.author
+
+        # Convert bet to int manually with error handling
+        try:
+            bet = int(bet)
+        except ValueError:
+            await ctx.send(f"{player.mention}, please enter a valid number! Example: `pls blackjack 50`")
+            return
 
         # Check if already in a game
         if player.id in self.active_blackjack_games:
