@@ -65,6 +65,25 @@ async def load_cogs():
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
 
+@bot.event
+async def on_command_error(ctx, error):
+    """Global error handler to catch command errors"""
+    if isinstance(error, commands.CommandNotFound):
+        return  # Ignore command not found
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f"❌ Missing argument: {error.param.name}")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send(f"❌ Bad argument: {error}")
+    elif isinstance(error, commands.CommandInvokeError):
+        print(f"❌ Command error in {ctx.command}: {error.original}")
+        import traceback
+        traceback.print_exception(type(error), error, error.__traceback__)
+        await ctx.send(f"❌ An error occurred: {error.original}")
+    else:
+        print(f"❌ Unhandled error in {ctx.command}: {error}")
+        import traceback
+        traceback.print_exception(type(error), error, error.__traceback__)
+
 async def main():
     async with bot:
         await load_cogs()

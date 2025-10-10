@@ -103,7 +103,7 @@ class PPCore(commands.Cog):
         try:
             self.db_pool = await asyncpg.create_pool(dsn=os.getenv('DATABASE_URL'))
             print("✅ Database pool created successfully.")
-            
+
             # Create bot_state table if it doesn't exist
             async with self.db_pool.acquire() as conn:
                 await conn.execute("""
@@ -113,13 +113,22 @@ class PPCore(commands.Cog):
                         updated_at TIMESTAMP WITH TIME ZONE
                     )
                 """)
-                
-            await self._get_hog_daddy_role(self.bot.guilds[0]) 
+
+            # Wait for bot to be ready before accessing guilds
+            await self.bot.wait_until_ready()
+
+            if self.bot.guilds:
+                await self._get_hog_daddy_role(self.bot.guilds[0])
+            else:
+                print("⚠️ No guilds found, skipping Hog Daddy role initialization")
+
             await self._initialize_daily_hog_daddy() # Fetch today's leader
             self.daily_reset_task.start()
             print("✅ Daily reset task started.")
         except Exception as e:
             print(f"❌ Failed to connect to database or start tasks: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def cog_unload(self):
         self.daily_reset_task.cancel()
