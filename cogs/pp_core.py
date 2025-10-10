@@ -114,15 +114,8 @@ class PPCore(commands.Cog):
                     )
                 """)
 
-            # Wait for bot to be ready before accessing guilds
-            await self.bot.wait_until_ready()
-
-            if self.bot.guilds:
-                await self._get_hog_daddy_role(self.bot.guilds[0])
-            else:
-                print("⚠️ No guilds found, skipping Hog Daddy role initialization")
-
-            await self._initialize_daily_hog_daddy() # Fetch today's leader
+            # Don't initialize guild-specific stuff here - do it when bot is ready
+            # We'll use the on_ready event listener instead
             self.daily_reset_task.start()
             print("✅ Daily reset task started.")
         except Exception as e:
@@ -135,6 +128,20 @@ class PPCore(commands.Cog):
         if self.db_pool:
             await self.db_pool.close()
             print("Database pool closed.")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Initialize guild-specific stuff after bot is ready"""
+        if not self.current_daily_hog_daddy_id:  # Only run once
+            try:
+                if self.bot.guilds:
+                    await self._get_hog_daddy_role(self.bot.guilds[0])
+                    await self._initialize_daily_hog_daddy()
+                    print("✅ Hog Daddy role initialized after bot ready")
+                else:
+                    print("⚠️ No guilds found")
+            except Exception as e:
+                print(f"❌ Error initializing Hog Daddy on ready: {e}")
 
     async def _get_db(self):
         if not self.db_pool:
