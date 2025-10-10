@@ -87,6 +87,15 @@ class PPDB(commands.Cog):
                 """)
                 print(" Table 'user_stats' checked/created.")
 
+                # Ensure user_data table exists (for PP coins)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_data (
+                        user_id BIGINT PRIMARY KEY,
+                        pp_coins INTEGER DEFAULT 0
+                    )
+                """)
+                print(" Table 'user_data' checked/created.")
+
                 # Ensure achievements table exists
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS achievements (
