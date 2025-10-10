@@ -25,6 +25,18 @@ class PPMinigames(commands.Cog):
         self.pp_off_participants = {}
         self.pp_off_channel = None
 
+        # Word Scramble State
+        self.current_scramble = None
+        self.scramble_timeout = 20
+
+        # Higher/Lower State
+        self.current_highlow = None
+        self.highlow_timeout = 15
+
+        # Math Rush State
+        self.current_math = None
+        self.math_timeout = 10
+
     async def _get_db(self):
         """Get database pool from PPDB cog"""
         db_cog = self.bot.get_cog('PPDB')
@@ -192,41 +204,50 @@ class PPMinigames(commands.Cog):
                 await ctx.send(cooldown_msg)
                 return
         
-        # Categories: 11=Film, 14=TV, 15=Video Games, 32=Cartoons/Animations
-        category_id = random.choice([11, 14, 15, 32])
-        api_url = f"https://opentdb.com/api.php?amount=1&type=multiple&category={category_id}"
-        
+        # Using The Trivia API - more questions, better variety!
+        # Categories: film_and_tv, music, sport_and_leisure, arts_and_literature, history, society_and_culture, science, geography, food_and_drink, general_knowledge
+        categories = ['film_and_tv', 'music', 'sport_and_leisure', 'general_knowledge', 'science']
+        category = random.choice(categories)
+        difficulties = ['easy', 'medium', 'hard']
+        difficulty = random.choice(difficulties)
+
+        api_url = f"https://the-trivia-api.com/v2/questions?limit=1&categories={category}&difficulties={difficulty}"
+
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(api_url) as response:
                     if response.status != 200:
                         await ctx.send("Sorry, couldn't fetch a trivia question right now.")
                         return
-                    
+
                     data = await response.json()
-                    if data['response_code'] != 0:
-                        await ctx.send("Sorry, couldn't get a unique trivia question. Try again later.")
+                    if not data or len(data) == 0:
+                        await ctx.send("Sorry, couldn't get a trivia question. Try again later.")
                         return
 
-                    question_data = data['results'][0]
-                    question = html.unescape(question_data['question'])
-                    correct_answer = html.unescape(question_data['correct_answer'])
-                    incorrect_answers = [html.unescape(ans) for ans in question_data['incorrect_answers']]
-                    
+                    question_data = data[0]
+                    question = question_data['question']['text']
+                    correct_answer = question_data['correctAnswer']
+                    incorrect_answers = question_data['incorrectAnswers']
+
                     all_answers = incorrect_answers + [correct_answer]
                     random.shuffle(all_answers)
-                    
+
                     choices_text = "\n".join([f"**{chr(65+i)}.** {choice}" for i, choice in enumerate(all_answers)])
-                    
+
+                    # Format category name nicely
+                    category_display = question_data['category'].replace('_', ' ').title()
+                    difficulty_emoji = "🟢" if difficulty == "easy" else "🟡" if difficulty == "medium" else "🔴"
+
                     embed = discord.Embed(
-                        title=f"🧠 Trivia Time! ({question_data['category']})",
+                        title=f"🧠 Trivia Time! {difficulty_emoji}",
                         description=f"**{question}**\n\n{choices_text}",
                         color=discord.Color.blue()
                     )
-                    embed.set_footer(text=f"You have {self.trivia_timeout} seconds to answer with A, B, C, or D!")
-                    
+                    embed.set_footer(text=f"Category: {category_display} | Difficulty: {difficulty.title()} | {self.trivia_timeout}s to answer!")
+
                     trivia_msg = await ctx.send(embed=embed)
-                    
+
                     self.current_trivia_question = {
                         'question': question,
                         'correct_answer': correct_answer,
@@ -236,12 +257,184 @@ class PPMinigames(commands.Cog):
                         'ask_time': datetime.now(timezone.utc),
                         'answered_users': set()
                     }
-                    
+
                     self.bot.loop.create_task(self._trivia_timeout_check(ctx.channel.id, trivia_msg.id, self.trivia_timeout))
 
             except Exception as e:
                 await ctx.send("An error occurred while fetching trivia.")
                 print(f"Trivia error: {e}")
+                import traceback
+                traceback.print_exc()
+
+    @commands.command()
+    @commands.guild_only()
+    async def scramble(self, ctx):
+        """Scrambles a word - unscramble it to win an item!"""
+        if self.current_scramble:
+            try:
+                existing_msg = await self.current_scramble['channel'].fetch_message(self.current_scramble['message_id'])
+                await ctx.send(f"A scramble is already active! Answer it first: {existing_msg.jump_url}")
+                return
+            except (discord.NotFound, discord.Forbidden):
+                self.current_scramble = None
+
+        # Word bank with varying difficulties
+        words = [
+            # Easy (5-6 letters)
+            'python', 'gaming', 'dragon', 'wizard', 'knight', 'castle', 'forest', 'battle',
+            # Medium (7-8 letters)
+            'champion', 'treasure', 'valorant', 'diamond', 'keyboard', 'mystery', 'warrior',
+            # Hard (9+ letters)
+            'legendary', 'adventure', 'challenge', 'iversity', 'lightning', 'dangerous'
+        ]
+
+        chosen_word = random.choice(words)
+        scrambled = ''.join(random.sample(chosen_word, len(chosen_word)))
+
+        # Make sure it's actually scrambled
+        attempts = 0
+        while scrambled.lower() == chosen_word.lower() and attempts < 10:
+            scrambled = ''.join(random.sample(chosen_word, len(chosen_word)))
+            attempts += 1
+
+        difficulty_emoji = "🟢" if len(chosen_word) <= 6 else "🟡" if len(chosen_word) <= 8 else "🔴"
+
+        embed = discord.Embed(
+            title=f"📝 Word Scramble! {difficulty_emoji}",
+            description=f"**Unscramble this word:**\n\n`{scrambled.upper()}`",
+            color=discord.Color.green()
+        )
+        embed.set_footer(text=f"You have {self.scramble_timeout} seconds! Type your answer in chat.")
+
+        scramble_msg = await ctx.send(embed=embed)
+
+        self.current_scramble = {
+            'word': chosen_word.lower(),
+            'scrambled': scrambled,
+            'channel': ctx.channel,
+            'message_id': scramble_msg.id,
+            'answered_users': set()
+        }
+
+        self.bot.loop.create_task(self._scramble_timeout_check(ctx.channel.id, scramble_msg.id))
+
+    @commands.command()
+    @commands.guild_only()
+    async def highlow(self, ctx):
+        """Guess if the next number will be higher or lower!"""
+        if self.current_highlow:
+            try:
+                existing_msg = await self.current_highlow['channel'].fetch_message(self.current_highlow['message_id'])
+                await ctx.send(f"A Higher/Lower game is already active: {existing_msg.jump_url}")
+                return
+            except (discord.NotFound, discord.Forbidden):
+                self.current_highlow = None
+
+        first_number = random.randint(1, 100)
+        actual_next = random.randint(1, 100)
+
+        embed = discord.Embed(
+            title="🎲 Higher or Lower?",
+            description=f"**Current number: {first_number}**\n\nWill the next number be **higher** or **lower**?\n\nType `h` or `higher` for higher\nType `l` or `lower` for lower",
+            color=discord.Color.purple()
+        )
+        embed.set_footer(text=f"You have {self.highlow_timeout} seconds to guess!")
+
+        highlow_msg = await ctx.send(embed=embed)
+
+        self.current_highlow = {
+            'current_number': first_number,
+            'next_number': actual_next,
+            'channel': ctx.channel,
+            'message_id': highlow_msg.id,
+            'answered_users': set()
+        }
+
+        self.bot.loop.create_task(self._highlow_timeout_check(ctx.channel.id, highlow_msg.id))
+
+    @commands.command()
+    @commands.guild_only()
+    async def mathrush(self, ctx):
+        """Solve a quick math problem to win an item!"""
+        if self.current_math:
+            try:
+                existing_msg = await self.current_math['channel'].fetch_message(self.current_math['message_id'])
+                await ctx.send(f"A Math Rush is already active: {existing_msg.jump_url}")
+                return
+            except (discord.NotFound, discord.Forbidden):
+                self.current_math = None
+
+        # Generate random math problem
+        num1 = random.randint(5, 50)
+        num2 = random.randint(5, 50)
+        operation = random.choice(['+', '-', '*'])
+
+        if operation == '+':
+            answer = num1 + num2
+            problem = f"{num1} + {num2}"
+        elif operation == '-':
+            answer = num1 - num2
+            problem = f"{num1} - {num2}"
+        else:  # multiplication
+            num1 = random.randint(2, 12)
+            num2 = random.randint(2, 12)
+            answer = num1 * num2
+            problem = f"{num1} × {num2}"
+
+        embed = discord.Embed(
+            title="🧮 Math Rush!",
+            description=f"**Solve this:**\n\n`{problem} = ?`",
+            color=discord.Color.orange()
+        )
+        embed.set_footer(text=f"Quick! You have {self.math_timeout} seconds!")
+
+        math_msg = await ctx.send(embed=embed)
+
+        self.current_math = {
+            'answer': answer,
+            'problem': problem,
+            'channel': ctx.channel,
+            'message_id': math_msg.id,
+            'answered_users': set()
+        }
+
+        self.bot.loop.create_task(self._math_timeout_check(ctx.channel.id, math_msg.id))
+
+    @commands.command(name="wyr")
+    @commands.guild_only()
+    async def would_you_rather(self, ctx):
+        """Presents a 'Would You Rather' question for fun discussion!"""
+        # Fun Would You Rather scenarios
+        scenarios = [
+            ("have the ability to fly", "be invisible"),
+            ("fight 100 duck-sized horses", "fight 1 horse-sized duck"),
+            ("always win at games but never improve", "always lose but get better every time"),
+            ("have unlimited PP coins", "have unlimited items"),
+            ("know all languages", "be able to talk to animals"),
+            ("live in the past", "live in the future"),
+            ("be a master at every game", "be a master chef"),
+            ("have super strength", "have super speed"),
+            ("never need to sleep", "never need to eat"),
+            ("always be 10 minutes late", "always be 20 minutes early"),
+            ("have a rewind button for life", "have a pause button for life"),
+            ("be famous but poor", "be rich but unknown"),
+            ("explore space", "explore the ocean depths"),
+            ("have a pet dragon", "have a pet unicorn"),
+            ("win every duel", "win every trivia")
+        ]
+
+        option_a, option_b = random.choice(scenarios)
+
+        embed = discord.Embed(
+            title="🤔 Would You Rather?",
+            description=f"**Option A:** {option_a.title()}\n\n**Option B:** {option_b.title()}\n\n React with 🅰️ for A or 🅱️ for B!",
+            color=discord.Color.magenta()
+        )
+        embed.set_footer(text="This is just for fun - no rewards!")
+
+        msg = await ctx.send(embed=embed)
+        await msg.add_reaction("🅰️")
+        await msg.add_reaction("🅱️")
 
     @commands.command(name="ppoff")
     @commands.guild_only()
@@ -324,11 +517,11 @@ class PPMinigames(commands.Cog):
         if (self.current_trivia_question and
             self.current_trivia_question['channel'].id == channel_id and
             self.current_trivia_question['message_id'] == message_id):
-            
+
             channel = self.current_trivia_question['channel']
             correct_answer = self.current_trivia_question['correct_answer']
             self.current_trivia_question = None
-            
+
             # When a trivia times out, we should reset the cooldown for that guild
             guild_id = channel.guild.id
             if hasattr(self, '_last_trivia_time') and guild_id in self._last_trivia_time:
@@ -339,6 +532,106 @@ class PPMinigames(commands.Cog):
                 await channel.send(f"⏰ Time's up! The correct answer was: **{correct_answer}**")
             except (discord.NotFound, discord.Forbidden) as e:
                 print(f"Error sending trivia timeout message: {e}")
+
+    async def _scramble_timeout_check(self, channel_id, message_id):
+        """Checks if a scramble timed out."""
+        await asyncio.sleep(self.scramble_timeout)
+        if (self.current_scramble and
+            self.current_scramble['channel'].id == channel_id and
+            self.current_scramble['message_id'] == message_id):
+
+            channel = self.current_scramble['channel']
+            correct_word = self.current_scramble['word']
+            self.current_scramble = None
+
+            try:
+                await channel.send(f"⏰ Time's up! The word was: **{correct_word.upper()}**")
+            except (discord.NotFound, discord.Forbidden) as e:
+                print(f"Error sending scramble timeout message: {e}")
+
+    async def _highlow_timeout_check(self, channel_id, message_id):
+        """Checks if a higher/lower game timed out."""
+        await asyncio.sleep(self.highlow_timeout)
+        if (self.current_highlow and
+            self.current_highlow['channel'].id == channel_id and
+            self.current_highlow['message_id'] == message_id):
+
+            channel = self.current_highlow['channel']
+            next_num = self.current_highlow['next_number']
+            current_num = self.current_highlow['current_number']
+            result = "higher" if next_num > current_num else "lower" if next_num < current_num else "the same"
+            self.current_highlow = None
+
+            try:
+                await channel.send(f"⏰ Time's up! The next number was **{next_num}** ({result})!")
+            except (discord.NotFound, discord.Forbidden) as e:
+                print(f"Error sending highlow timeout message: {e}")
+
+    async def _math_timeout_check(self, channel_id, message_id):
+        """Checks if a math problem timed out."""
+        await asyncio.sleep(self.math_timeout)
+        if (self.current_math and
+            self.current_math['channel'].id == channel_id and
+            self.current_math['message_id'] == message_id):
+
+            channel = self.current_math['channel']
+            answer = self.current_math['answer']
+            problem = self.current_math['problem']
+            self.current_math = None
+
+            try:
+                await channel.send(f"⏰ Time's up! The answer was: **{problem} = {answer}**")
+            except (discord.NotFound, discord.Forbidden) as e:
+                print(f"Error sending math timeout message: {e}")
+
+    async def _award_game_item(self, winner, message, success_message: str):
+        """Awards a random item to a game winner (used for scramble, highlow, mathrush)"""
+        db = await self._get_db()
+        try:
+            async with db.acquire() as conn:
+                # Get all available items
+                items = await conn.fetch("SELECT item_id, name FROM items")
+                if not items:
+                    await message.channel.send(f"{success_message} (No items available to award)")
+                    return
+
+                # Define item rarities (same as trivia)
+                item_weights = {
+                    1: 40,  # Growth Potion - common
+                    2: 30,  # Shrink Ray - uncommon
+                    3: 20,  # Lucky Socks - rare
+                    4: 10   # Reroll Token - very rare
+                }
+
+                # Choose random item based on weights
+                item_ids = [item['item_id'] for item in items]
+                weights = [item_weights.get(item_id, 25) for item_id in item_ids]
+                chosen_item_id = random.choices(item_ids, weights=weights, k=1)[0]
+                chosen_item = next(item for item in items if item['item_id'] == chosen_item_id)
+
+                # Add item to inventory
+                await conn.execute("""
+                    INSERT INTO user_inventory (user_id, item_id, quantity)
+                    VALUES ($1, $2, 1)
+                    ON CONFLICT (user_id, item_id)
+                    DO UPDATE SET quantity = user_inventory.quantity + 1
+                """, winner.id, chosen_item_id)
+
+                # Get rarity text
+                weight = item_weights.get(chosen_item_id, 25)
+                if weight <= 10:
+                    rarity_text = "🌟 VERY RARE 🌟"
+                elif weight <= 20:
+                    rarity_text = "✨ RARE ✨"
+                elif weight <= 30:
+                    rarity_text = "🔹 UNCOMMON 🔹"
+                else:
+                    rarity_text = "COMMON"
+
+                await message.channel.send(f"{success_message} You won a **{chosen_item['name']}**! ({rarity_text})")
+        except Exception as e:
+            print(f"Error awarding game item: {e}")
+            await message.channel.send(f"{success_message} (Error giving item reward)")
 
     async def _schedule_ppoff_end(self, delay_seconds: int):
         """Waits for the duration then triggers PP Off results calculation."""
@@ -399,10 +692,64 @@ class PPMinigames(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        """Handle trivia answers"""
+        """Handle answers for trivia, scramble, highlow, and math games"""
         if message.author.bot:
             return
 
+        # Handle Word Scramble
+        if self.current_scramble and message.channel.id == self.current_scramble['channel'].id:
+            if message.author.id not in self.current_scramble['answered_users']:
+                user_answer = message.content.strip().lower()
+                if user_answer == self.current_scramble['word']:
+                    self.current_scramble['answered_users'].add(message.author.id)
+                    winner = message.author
+                    correct_word = self.current_scramble['word']
+                    self.current_scramble = None
+
+                    # Award item
+                    await self._award_game_item(winner, message, f"🎉 Correct, {winner.mention}! The word was **{correct_word.upper()}**!")
+                    return
+
+        # Handle Higher/Lower
+        if self.current_highlow and message.channel.id == self.current_highlow['channel'].id:
+            if message.author.id not in self.current_highlow['answered_users']:
+                user_answer = message.content.strip().lower()
+                if user_answer in ['h', 'higher', 'l', 'lower']:
+                    self.current_highlow['answered_users'].add(message.author.id)
+                    current = self.current_highlow['current_number']
+                    next_num = self.current_highlow['next_number']
+                    guess_higher = user_answer in ['h', 'higher']
+
+                    is_correct = (next_num > current and guess_higher) or (next_num < current and not guess_higher) or (next_num == current)
+
+                    if is_correct:
+                        winner = message.author
+                        self.current_highlow = None
+                        result_msg = f"🎉 Correct, {winner.mention}! The next number was **{next_num}**!"
+                        await self._award_game_item(winner, message, result_msg)
+                    else:
+                        await message.reply(f"❌ Wrong! The next number was **{next_num}**. Better luck next time!", delete_after=10)
+                        # Don't clear the game, let others try
+                    return
+
+        # Handle Math Rush
+        if self.current_math and message.channel.id == self.current_math['channel'].id:
+            if message.author.id not in self.current_math['answered_users']:
+                try:
+                    user_answer = int(message.content.strip())
+                    if user_answer == self.current_math['answer']:
+                        self.current_math['answered_users'].add(message.author.id)
+                        winner = message.author
+                        problem = self.current_math['problem']
+                        answer = self.current_math['answer']
+                        self.current_math = None
+
+                        await self._award_game_item(winner, message, f"🎉 Correct, {winner.mention}! **{problem} = {answer}**!")
+                        return
+                except ValueError:
+                    pass  # Not a number, ignore
+
+        # Handle Trivia
         if not self.current_trivia_question:
             return
 

@@ -36,7 +36,11 @@ class HelpCommands(commands.Cog):
         # Mini-Games
         embed.add_field(
             name="🎮 Mini-Games",
-            value=f"`{prefix}trivia` - Start a trivia question. First correct answer (A-D) wins!\n"
+            value=f"`{prefix}trivia` - Answer a trivia question (A-D) to win items!\n"
+                  f"`{prefix}scramble` - Unscramble a word to win an item!\n"
+                  f"`{prefix}highlow` - Guess if the next number is higher or lower!\n"
+                  f"`{prefix}mathrush` - Solve a quick math problem to win!\n"
+                  f"`{prefix}wyr` - Answer a fun 'Would You Rather' question!\n"
                   f"`{prefix}duel <@user>` - Challenge another user to a PP duel.\n"
                   f"`{prefix}accept <@user>` - Accept a pending duel challenge.\n"
                   f"`{prefix}ppoff [minutes]` - Start a timed PP Off event (default 1 min). Highest roll wins!",
