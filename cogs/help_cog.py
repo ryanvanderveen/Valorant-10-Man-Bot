@@ -51,6 +51,23 @@ class HelpCommands(commands.Cog):
             inline=False
         )
 
+        # NSFW Fun
+        embed.add_field(
+            name="NSFW Fun",
+            value=f"`{prefix}kiss <@user>` - Share a spicy kiss.\n"
+                  f"`{prefix}fuck <@user>` - Consensual adult fun.\n"
+                  f"`{prefix}bang <@user>` - Turn the heat up.\n"
+                  f"`{prefix}tease <@user>` - Playful teasing.\n"
+                  f"`{prefix}dirtyrate [@user]` - Spicy rating out of 100.\n"
+                  f"`{prefix}smash <@user>` - Smash verdict.\n"
+                  f"`{prefix}pass <@user>` - Pass verdict.\n"
+                  f"`{prefix}top` - Top vibes.\n"
+                  f"`{prefix}bottom` - Bottom vibes.\n"
+                  f"`{prefix}kink` - Random kink prompt.\n"
+                  f"`{prefix}moan` - Random moan.",
+            inline=False
+        )
+
         # Utility
         embed.add_field(
             name="⚙️ Utility", 
@@ -65,3 +82,6 @@ class HelpCommands(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(HelpCommands(bot))
+
+
+
