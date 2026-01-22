@@ -8,8 +8,8 @@ class Fun(commands.Cog):
         self.bot = bot
 
     def _pair_names(self, ctx, target):
-        author = ctx.author.display_name
-        other = target.display_name if target else "someone"
+        author = ctx.author.mention
+        other = target.mention if target else "someone"
         return author, other
 
     def _is_bot_target(self, target):
@@ -83,7 +83,7 @@ class Fun(commands.Cog):
             "absolutely feral",
         ]
         label = labels[min(score // 20, 4)]
-        await ctx.send(f"Dirty rating for {target.display_name}: {score}/100 - {label}.")
+        await ctx.send(f"Dirty rating for {target.mention}: {score}/100 - {label}.")
 
     @commands.command(name="smash")
     async def smash(self, ctx, target: Player):
@@ -116,18 +116,18 @@ class Fun(commands.Cog):
     @commands.command(name="top")
     async def top(self, ctx):
         lines = [
-            f"{ctx.author.display_name} is top energy.",
-            f"{ctx.author.display_name} is definitely top tonight.",
-            f"{ctx.author.display_name} radiates top vibes.",
+            f"{ctx.author.mention} is top energy.",
+            f"{ctx.author.mention} is definitely top tonight.",
+            f"{ctx.author.mention} radiates top vibes.",
         ]
         await ctx.send(random.choice(lines))
 
     @commands.command(name="bottom")
     async def bottom(self, ctx):
         lines = [
-            f"{ctx.author.display_name} is bottom energy.",
-            f"{ctx.author.display_name} is definitely bottom tonight.",
-            f"{ctx.author.display_name} radiates bottom vibes.",
+            f"{ctx.author.mention} is bottom energy.",
+            f"{ctx.author.mention} is definitely bottom tonight.",
+            f"{ctx.author.mention} radiates bottom vibes.",
         ]
         await ctx.send(random.choice(lines))
 
